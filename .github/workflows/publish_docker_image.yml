@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: publish-docker-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: argoevolutiongoacr.azurecr.io
   IMAGE_NAME: argo-evolution-go
@@ -17,9 +21,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
+        uses: actions/checkout@v5
 
       - name: Read version
         id: version
@@ -34,9 +36,6 @@ jobs:
             type=raw,value=${{ steps.version.outputs.version }}
             type=raw,value=latest,enable=${{ !contains(steps.version.outputs.version, '-beta') }}
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -49,15 +48,15 @@ jobs:
 
       - name: Build and push
         id: docker_build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=min
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
 
