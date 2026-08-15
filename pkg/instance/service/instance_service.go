@@ -3,6 +3,7 @@ package instance_service
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,12 +14,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/EvolutionAPI/evolution-go/pkg/config"
-	instance_model "github.com/EvolutionAPI/evolution-go/pkg/instance/model"
-	instance_repository "github.com/EvolutionAPI/evolution-go/pkg/instance/repository"
-	event_types "github.com/EvolutionAPI/evolution-go/pkg/internal/event_types"
-	logger_wrapper "github.com/EvolutionAPI/evolution-go/pkg/logger"
-	whatsmeow_service "github.com/EvolutionAPI/evolution-go/pkg/whatsmeow/service"
+	"github.com/evolution-foundation/evolution-go/pkg/config"
+	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
+	instance_repository "github.com/evolution-foundation/evolution-go/pkg/instance/repository"
+	event_types "github.com/evolution-foundation/evolution-go/pkg/internal/event_types"
+	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
+	"github.com/evolution-foundation/evolution-go/pkg/utils"
+	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
 )
@@ -55,6 +57,7 @@ type instances struct {
 }
 
 type ProxyConfig struct {
+	Protocol string `json:"protocol,omitempty"`
 	Port     string `json:"port"`
 	Password string `json:"password"`
 	Username string `json:"username"`
@@ -87,8 +90,15 @@ type StatusStruct struct {
 }
 
 type QrcodeStruct struct {
-	Qrcode string
-	Code   string
+	Qrcode string `json:"qrcode"`
+	Code   string `json:"code"`
+	// Passkey ceremony fields. Populated when the account requires a WebAuthn
+	// passkey to finish linking (no QR to scan at that point). The manager uses
+	// PasskeyStage to switch its UI and PasskeyOpenUrl for the
+	// "Abrir WhatsApp Web" button that launches the passkey ceremony.
+	PasskeyStage   string `json:"passkeyStage,omitempty"`
+	PasskeyOpenURL string `json:"passkeyOpenUrl,omitempty"`
+	PasskeyCode    string `json:"passkeyCode,omitempty"`
 }
 
 type PairStruct struct {
@@ -101,6 +111,7 @@ type PairReturnStruct struct {
 }
 
 type SetProxyStruct struct {
+	Protocol string `json:"protocol,omitempty"`
 	Host     string `json:"host" validate:"required"`
 	Port     string `json:"port" validate:"required"`
 	Username string `json:"username"`
@@ -152,6 +163,10 @@ func (i *instances) ensureClientConnected(instanceId string) (*whatsmeow.Client,
 }
 
 func (i instances) Create(data *CreateStruct) (*instance_model.Instance, error) {
+	if data.Proxy != nil {
+		data.Proxy.Protocol = utils.NormalizeProxyProtocol(data.Proxy.Protocol, data.Proxy.Port)
+	}
+
 	proxyJson, err := json.Marshal(data.Proxy)
 	if err != nil {
 		return nil, err
@@ -369,9 +384,13 @@ func (i instances) Logout(instance *instance_model.Instance) (*instance_model.In
 }
 
 func (i instances) Status(instance *instance_model.Instance) (*StatusStruct, error) {
-	client, err := i.ensureClientConnected(instance.Id)
-	if err != nil {
-		return nil, err
+	client := i.clientPointer[instance.Id]
+
+	if client == nil {
+		return &StatusStruct{
+			Connected: false,
+			LoggedIn:  false,
+		}, nil
 	}
 
 	isConnected := client.IsConnected()
@@ -384,14 +403,12 @@ func (i instances) Status(instance *instance_model.Instance) (*StatusStruct, err
 		name = client.Store.PushName
 	}
 
-	status := &StatusStruct{
+	return &StatusStruct{
 		Connected: isConnected,
 		LoggedIn:  isLoggedIn,
 		myJid:     myJid,
 		Name:      name,
-	}
-
-	return status, nil
+	}, nil
 }
 
 func (i instances) GetQr(instance *instance_model.Instance) (*QrcodeStruct, error) {
@@ -433,6 +450,21 @@ func (i instances) GetQr(instance *instance_model.Instance) (*QrcodeStruct, erro
 		return nil, err
 	}
 
+	// If a passkey ceremony is in progress, there is no QR to scan — return the
+	// passkey stage + the #wapk openUrl so the manager can render the
+	// "Abrir WhatsApp Web" button. Checked before the empty-QR branch because
+	// during a passkey ceremony instance.Qrcode is empty.
+	if store := i.whatsmeowService.PasskeyCeremonyStore(); store != nil {
+		if token, state, ok := store.StateByInstance(instance.Id); ok {
+			logger.LogInfo("[%s] Passkey ceremony active (stage=%s) — returning passkey info instead of QR", instance.Id, state.Stage)
+			return &QrcodeStruct{
+				PasskeyStage:   state.Stage,
+				PasskeyCode:    state.Code,
+				PasskeyOpenURL: buildPasskeyOpenURL(token),
+			}, nil
+		}
+	}
+
 	code := instance.Qrcode
 	if code == "" {
 		// Se não há QR code ainda, aguardar um pouco mais e tentar novamente
@@ -463,10 +495,50 @@ func (i instances) GetQr(instance *instance_model.Instance) (*QrcodeStruct, erro
 	return qr, nil
 }
 
+// buildPasskeyOpenURL builds the URL the manager opens to start the passkey
+// ceremony: https://web.whatsapp.com/#wapk=<base64url({t:token,b:publicBase})>.
+// publicBase must be the PUBLICLY reachable API base the browser can hit; set it
+// via PASSKEY_PUBLIC_URL. Kept in sync with the event handler in whatsmeow.go.
+func buildPasskeyOpenURL(token string) string {
+	publicBase := os.Getenv("PASSKEY_PUBLIC_URL")
+	if publicBase == "" {
+		publicBase = "<SET_PASSKEY_PUBLIC_URL>"
+	}
+	payload := fmt.Sprintf(`{"t":%q,"b":%q}`, token, publicBase)
+	wapk := base64.RawURLEncoding.EncodeToString([]byte(payload))
+	return "https://web.whatsapp.com/#wapk=" + wapk
+}
+
 func (i instances) Pair(data *PairStruct, instance *instance_model.Instance) (*PairReturnStruct, error) {
-	code, err := i.clientPointer[instance.Id].PairPhone(context.Background(), data.Phone, true, whatsmeow.PairClientChrome, "Chrome (Linux)")
+	logger := i.loggerWrapper.GetLogger(instance.Id)
+	client := i.clientPointer[instance.Id]
+
+	if client == nil || !client.IsConnected() {
+		if client != nil && client.IsLoggedIn() {
+			return nil, fmt.Errorf("instance is already authenticated")
+		}
+		logger.LogInfo("[%s] No active connection, starting instance for phone pairing", instance.Id)
+		if err := i.whatsmeowService.StartInstance(instance.Id); err != nil {
+			logger.LogError("[%s] Failed to start instance for pairing: %v", instance.Id, err)
+			return nil, fmt.Errorf("failed to start instance: %w", err)
+		}
+		// Wait for the WA websocket connection and initial QR generation to establish.
+		// PairPhone must be called after the QR event is received per whatsmeow docs.
+		time.Sleep(3 * time.Second)
+		client = i.clientPointer[instance.Id]
+		if client == nil {
+			return nil, fmt.Errorf("failed to initialize client for pairing")
+		}
+	}
+
+	if client.IsLoggedIn() {
+		return nil, fmt.Errorf("instance is already authenticated")
+	}
+
+	code, err := client.PairPhone(context.Background(), data.Phone, true, whatsmeow.PairClientChrome, "Chrome (Linux)")
 	if err != nil {
-		i.loggerWrapper.GetLogger(instance.Id).LogError("[%s] something went wrong calling pair phone", instance.Id)
+		logger.LogError("[%s] PairPhone failed: %v", instance.Id, err)
+		return nil, fmt.Errorf("pairing failed: %w", err)
 	}
 
 	return &PairReturnStruct{PairingCode: code}, nil
@@ -562,6 +634,8 @@ func (i instances) SetProxy(id string, proxyConfig *ProxyConfig) error {
 		return fmt.Errorf("proxy port is required")
 	}
 
+	proxyConfig.Protocol = utils.NormalizeProxyProtocol(proxyConfig.Protocol, proxyConfig.Port)
+
 	// Convert proxy config to JSON
 	proxyJSON, err := json.Marshal(proxyConfig)
 	if err != nil {
@@ -578,7 +652,7 @@ func (i instances) SetProxy(id string, proxyConfig *ProxyConfig) error {
 		return err
 	}
 
-	i.loggerWrapper.GetLogger(id).LogInfo("[%s] Proxy configuration updated: %s:%s", id, proxyConfig.Host, proxyConfig.Port)
+	i.loggerWrapper.GetLogger(id).LogInfo("[%s] Proxy configuration updated: %s://%s:%s", id, proxyConfig.Protocol, proxyConfig.Host, proxyConfig.Port)
 
 	// Reconnect to apply proxy changes
 	go i.Reconnect(instance)
@@ -592,6 +666,7 @@ func (i instances) SetProxyFromStruct(id string, data *SetProxyStruct) error {
 	}
 
 	proxyConfig := &ProxyConfig{
+		Protocol: data.Protocol,
 		Host:     data.Host,
 		Port:     data.Port,
 		Username: data.Username,
