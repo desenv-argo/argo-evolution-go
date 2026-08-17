@@ -316,17 +316,27 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 
 	var container *sqlstore.Container
 
+	if w.config.PostgresAuthDB != "" && w.authDB == nil {
+		w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] PostgresAuthDB is set but authDB was never initialized", cd.Instance.Id)
+		return
+	}
+
 	if w.config.WaDebug != "" {
 		dbLog := waLog.Stdout("Database", w.config.WaDebug, true)
 		if w.config.PostgresAuthDB != "" {
-			container, err = sqlstore.New(context.Background(), "postgres", w.config.PostgresAuthDB, dbLog)
+			// Reuse the application pool. Creating a sqlstore pool on every QR or
+			// reconnect attempt leaks PostgreSQL connections until the database
+			// refuses new clients, which prevents QR generation entirely.
+			container = sqlstore.NewWithDB(w.authDB, "postgres", dbLog)
+			err = container.Upgrade(context.Background())
 		} else {
 			dsn := fmt.Sprintf("file:%s/dbdata/main.db?_pragma=foreign_keys(1)&_busy_timeout=5000&cache=shared&mode=rwc&_journal_mode=WAL", w.exPath)
 			container, err = sqlstore.New(context.Background(), "sqlite", dsn, dbLog)
 		}
 	} else {
 		if w.config.PostgresAuthDB != "" {
-			container, err = sqlstore.New(context.Background(), "postgres", w.config.PostgresAuthDB, nil)
+			container = sqlstore.NewWithDB(w.authDB, "postgres", nil)
+			err = container.Upgrade(context.Background())
 		} else {
 			dsn := fmt.Sprintf("file:%s/dbdata/main.db?_pragma=foreign_keys(1)&_busy_timeout=5000&cache=shared&mode=rwc&_journal_mode=WAL", w.exPath)
 			container, err = sqlstore.New(context.Background(), "sqlite", dsn, nil)
