@@ -34,6 +34,7 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
 
+	analytics_settings "github.com/evolution-foundation/evolution-go/pkg/analytics/settings"
 	"github.com/evolution-foundation/evolution-go/pkg/config"
 	producer_interfaces "github.com/evolution-foundation/evolution-go/pkg/events/interfaces"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
@@ -43,6 +44,7 @@ import (
 	label_repository "github.com/evolution-foundation/evolution-go/pkg/label/repository"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	message_model "github.com/evolution-foundation/evolution-go/pkg/message/model"
+	message_normalizer "github.com/evolution-foundation/evolution-go/pkg/message/normalizer"
 	message_repository "github.com/evolution-foundation/evolution-go/pkg/message/repository"
 	"github.com/evolution-foundation/evolution-go/pkg/passkey/ceremony"
 	poll_service "github.com/evolution-foundation/evolution-go/pkg/poll/service"
@@ -97,6 +99,7 @@ type whatsmeowService struct {
 	natsProducer       producer_interfaces.Producer
 	loggerWrapper      *logger_wrapper.LoggerManager
 	passkeyCeremony    *ceremony.Store
+	captureGate        *analytics_settings.CaptureGate
 }
 
 type MyClient struct {
@@ -130,6 +133,7 @@ type MyClient struct {
 	loggerWrapper      *logger_wrapper.LoggerManager
 	qrcodeCount        int
 	passkeyCeremony    *ceremony.Store
+	captureGate        *analytics_settings.CaptureGate
 }
 
 func (mycli *MyClient) persistMessageAsync(message message_model.Message) {
@@ -505,6 +509,7 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 		loggerWrapper:      w.loggerWrapper,
 		qrcodeCount:        0,
 		passkeyCeremony:    w.passkeyCeremony,
+		captureGate:        w.captureGate,
 	}
 
 	mycli.eventHandlerID = mycli.WAClient.AddEventHandler(mycli.myEventHandler)
@@ -1635,13 +1640,10 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 
 		postMap["data"] = dataMap
 
-		if mycli.config.DatabaseSaveMessages {
-			message := message_model.Message{
-				MessageID: evt.Info.ID,
-				Timestamp: evt.Info.Timestamp.Format("2006-01-02 15:04:05"),
-				Status:    "Received",
-				Source:    evt.Info.Chat.ToNonAD().User,
-				Referral:  referral,
+		if mycli.captureGate.Enabled() {
+			message := message_normalizer.Normalize(mycli.userID, evt.Info, evt.Message, referral)
+			if webhookMessage, ok := dataMap["Message"].(map[string]interface{}); ok {
+				message_normalizer.ApplyMediaMetadata(&message, webhookMessage)
 			}
 
 			mycli.persistMessageAsync(message)
@@ -1751,6 +1753,10 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		if mycli.config.EventIgnoreGroup && strings.Contains(evt.Chat.String(), "@g.us") {
 			return
 		}
+		if len(evt.MessageIDs) == 0 {
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Receipt without message IDs ignored", mycli.userID)
+			return
+		}
 
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Receipt received with ID: %s from %s with type %s", mycli.userID, evt.MessageIDs[0], evt.SourceString(), evt.Type)
 
@@ -1770,12 +1776,19 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 
 					var message message_model.Message
 
+					readAt := evt.Timestamp.UTC()
+					message.InstanceID = mycli.userID
 					message.MessageID = v
-					message.Timestamp = evt.Timestamp.Format("2006-01-02 15:04:05")
+					message.ChatJID = evt.Chat.String()
+					message.Direction = "outbound"
+					message.FromMe = true
+					message.IsGroup = strings.HasSuffix(evt.Chat.String(), "@g.us")
+					message.Timestamp = readAt.Format("2006-01-02 15:04:05")
 					message.Status = "Read"
 					message.Source = evt.Chat.ToNonAD().User
+					message.ReadAt = &readAt
 
-					if mycli.config.DatabaseSaveMessages {
+					if mycli.captureGate.Enabled() {
 						mycli.persistMessageAsync(message)
 					}
 				}
@@ -1785,23 +1798,31 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		} else if evt.Type == types.ReceiptTypeDelivered {
 			postMap["state"] = "Delivered"
 
-			var message message_model.Message
+			for _, messageID := range evt.MessageIDs {
+				messageKey := fmt.Sprintf("%s_%s_%s", mycli.userID, messageID, "Delivered")
+				if _, found := mycli.processedMessages.Get(messageKey); found {
+					mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Message duplicated ignored: %s", mycli.userID, messageID)
+					continue
+				}
 
-			message.MessageID = evt.MessageIDs[0]
-			message.Timestamp = evt.Timestamp.Format("2006-01-02 15:04:05")
-			message.Status = "Delivered"
-			message.Source = evt.Chat.ToNonAD().User
+				mycli.processedMessages.Set(messageKey, true, 30*time.Minute)
+				deliveredAt := evt.Timestamp.UTC()
+				message := message_model.Message{
+					InstanceID:  mycli.userID,
+					MessageID:   messageID,
+					ChatJID:     evt.Chat.String(),
+					Direction:   "outbound",
+					FromMe:      true,
+					IsGroup:     strings.HasSuffix(evt.Chat.String(), "@g.us"),
+					Timestamp:   deliveredAt.Format("2006-01-02 15:04:05"),
+					Status:      "Delivered",
+					Source:      evt.Chat.ToNonAD().User,
+					DeliveredAt: &deliveredAt,
+				}
 
-			messageKey := fmt.Sprintf("%s_%s_%s", mycli.userID, evt.MessageIDs[0], "Delivered")
-			if _, found := mycli.processedMessages.Get(messageKey); found {
-				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Message duplicated ignored: %s", mycli.userID, evt.MessageIDs[0])
-				return
-			}
-
-			mycli.processedMessages.Set(messageKey, true, 30*time.Minute)
-
-			if mycli.config.DatabaseSaveMessages {
-				mycli.persistMessageAsync(message)
+				if mycli.captureGate.Enabled() {
+					mycli.persistMessageAsync(message)
+				}
 			}
 
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Message delivered to %s", mycli.userID, evt.SourceString())
@@ -2805,6 +2826,7 @@ func NewWhatsmeowService(
 	authDB *sql.DB,
 	messageRepository message_repository.MessageRepository,
 	labelRepository label_repository.LabelRepository,
+	captureGate *analytics_settings.CaptureGate,
 	config *config.Config,
 	killChannel map[string](chan bool),
 	clientPointer map[string]*whatsmeow.Client,
@@ -2841,6 +2863,7 @@ func NewWhatsmeowService(
 		natsProducer:       natsProducer,
 		loggerWrapper:      loggerWrapper,
 		passkeyCeremony:    ceremony.NewStore(),
+		captureGate:        captureGate,
 	}
 }
 

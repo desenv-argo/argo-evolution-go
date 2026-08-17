@@ -53,7 +53,8 @@ func TestInsertMessagePreservesReferralOnStatusUpdate(t *testing.T) {
 	}
 
 	initialSQL := logBuffer.String()
-	if !strings.Contains(initialSQL, `"referral"="excluded"."referral"`) {
+	initialUpdates := conflictUpdates(initialSQL)
+	if !strings.Contains(strings.ToLower(initialUpdates), "referral") {
 		t.Fatalf("expected initial upsert SQL to update referral, got %q", initialSQL)
 	}
 
@@ -71,10 +72,21 @@ func TestInsertMessagePreservesReferralOnStatusUpdate(t *testing.T) {
 	}
 
 	updatedSQL := logBuffer.String()
-	if strings.Contains(updatedSQL, `"referral"="excluded"."referral"`) {
+	updatedUpdates := conflictUpdates(updatedSQL)
+	if strings.Contains(strings.ToLower(updatedUpdates), "referral") {
 		t.Fatalf("expected updated upsert SQL to omit referral update, got %q", updatedSQL)
 	}
-	if !strings.Contains(updatedSQL, `"timestamp"="excluded"."timestamp","status"="excluded"."status","source"="excluded"."source"`) {
-		t.Fatalf("expected updated upsert SQL to keep core columns, got %q", updatedSQL)
+	for _, column := range []string{"timestamp", "status", "source"} {
+		if !strings.Contains(strings.ToLower(updatedUpdates), column) {
+			t.Fatalf("expected updated upsert SQL to keep %s, got %q", column, updatedSQL)
+		}
 	}
+}
+
+func conflictUpdates(query string) string {
+	index := strings.Index(strings.ToUpper(query), "DO UPDATE SET")
+	if index < 0 {
+		return ""
+	}
+	return query[index:]
 }

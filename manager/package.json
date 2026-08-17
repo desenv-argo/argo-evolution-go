@@ -1,0 +1,9 @@
+{
+  "name": "@argo/evolution-manager-extensions",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node --check src/argo-manager.js && node --check scripts/build.mjs"
+  }
+}

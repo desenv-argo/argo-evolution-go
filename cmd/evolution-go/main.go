@@ -21,6 +21,9 @@ import (
 	"gorm.io/gorm"
 	_ "modernc.org/sqlite"
 
+	analytics_handler "github.com/evolution-foundation/evolution-go/pkg/analytics/handler"
+	analytics_repository "github.com/evolution-foundation/evolution-go/pkg/analytics/repository"
+	analytics_settings "github.com/evolution-foundation/evolution-go/pkg/analytics/settings"
 	call_handler "github.com/evolution-foundation/evolution-go/pkg/call/handler"
 	call_service "github.com/evolution-foundation/evolution-go/pkg/call/service"
 	chat_handler "github.com/evolution-foundation/evolution-go/pkg/chat/handler"
@@ -160,6 +163,11 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 
 	instanceRepository := instance_repository.NewInstanceRepository(db)
 	messageRepository := message_repository.NewMessageRepository(db)
+	analyticsRepository := analytics_repository.NewAnalyticsRepository(db)
+	captureGate, err := analytics_settings.NewCaptureGate(db, config.DatabaseSaveMessages)
+	if err != nil {
+		log.Fatalf("failed to initialize analytics settings: %v", err)
+	}
 	labelRepository := label_repository.NewLabelRepository(db)
 
 	whatsmeowService := whatsmeow_service.NewWhatsmeowService(
@@ -167,6 +175,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		authDB,
 		message_repository.NewMessageRepository(db),
 		labelRepository,
+		captureGate,
 		config,
 		killChannel,
 		clientPointer,
@@ -187,7 +196,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		config,
 		loggerWrapper,
 	)
-	sendMessageService := send_service.NewSendService(clientPointer, whatsmeowService, config, loggerWrapper)
+	sendMessageService := send_service.NewSendService(clientPointer, whatsmeowService, messageRepository, captureGate, config, loggerWrapper)
 	userService := user_service.NewUserService(clientPointer, whatsmeowService, loggerWrapper)
 	messageService := message_service.NewMessageService(clientPointer, messageRepository, whatsmeowService, loggerWrapper)
 	chatService := chat_service.NewChatService(clientPointer, whatsmeowService, loggerWrapper)
@@ -239,6 +248,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		newsletter_handler.NewNewsletterHandler(newsletterService),
 		pollHandler,
 		server_handler.NewServerHandler(),
+		analytics_handler.NewAnalyticsHandler(analyticsRepository, captureGate),
 	).AssignRoutes(r)
 
 	if config.ConnectOnStartup {
