@@ -21,9 +21,12 @@ import (
 	"time"
 
 	"github.com/chai2010/webp"
+	analytics_settings "github.com/evolution-foundation/evolution-go/pkg/analytics/settings"
 	config "github.com/evolution-foundation/evolution-go/pkg/config"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
+	message_normalizer "github.com/evolution-foundation/evolution-go/pkg/message/normalizer"
+	message_repository "github.com/evolution-foundation/evolution-go/pkg/message/repository"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
 	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
 	"github.com/gabriel-vasile/mimetype"
@@ -53,10 +56,12 @@ type SendService interface {
 }
 
 type sendService struct {
-	clientPointer    map[string]*whatsmeow.Client
-	whatsmeowService whatsmeow_service.WhatsmeowService
-	config           *config.Config
-	loggerWrapper    *logger_wrapper.LoggerManager
+	clientPointer     map[string]*whatsmeow.Client
+	whatsmeowService  whatsmeow_service.WhatsmeowService
+	messageRepository message_repository.MessageRepository
+	captureGate       *analytics_settings.CaptureGate
+	config            *config.Config
+	loggerWrapper     *logger_wrapper.LoggerManager
 }
 
 type SendDataStruct struct {
@@ -2801,6 +2806,15 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 		},
 	}
 
+	if s.captureGate.Enabled() && s.messageRepository != nil {
+		persistedMessage := message_normalizer.Normalize(instance.Id, messageInfo, msg, nil)
+		go func() {
+			if persistErr := s.messageRepository.InsertMessage(persistedMessage); persistErr != nil {
+				s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Failed to persist outbound message %s: %v", instance.Id, persistedMessage.MessageID, persistErr)
+			}
+		}()
+	}
+
 	postMap := make(map[string]interface{})
 	postMap["event"] = "SendMessage"
 
@@ -3368,13 +3382,17 @@ func (s *sendService) sendStatusWebhook(messageSent *MessageSendStruct, instance
 func NewSendService(
 	clientPointer map[string]*whatsmeow.Client,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
+	messageRepository message_repository.MessageRepository,
+	captureGate *analytics_settings.CaptureGate,
 	config *config.Config,
 	loggerWrapper *logger_wrapper.LoggerManager,
 ) SendService {
 	return &sendService{
-		clientPointer:    clientPointer,
-		whatsmeowService: whatsmeowService,
-		config:           config,
-		loggerWrapper:    loggerWrapper,
+		clientPointer:     clientPointer,
+		whatsmeowService:  whatsmeowService,
+		messageRepository: messageRepository,
+		captureGate:       captureGate,
+		config:            config,
+		loggerWrapper:     loggerWrapper,
 	}
 }

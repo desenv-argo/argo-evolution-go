@@ -1,13 +1,12 @@
 package routes
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
 	_ "github.com/evolution-foundation/evolution-go/docs"
+	analytics_handler "github.com/evolution-foundation/evolution-go/pkg/analytics/handler"
 	call_handler "github.com/evolution-foundation/evolution-go/pkg/call/handler"
 	chat_handler "github.com/evolution-foundation/evolution-go/pkg/chat/handler"
 	community_handler "github.com/evolution-foundation/evolution-go/pkg/community/handler"
@@ -38,6 +37,7 @@ type Routes struct {
 	newsletterHandler       newsletter_handler.NewsletterHandler
 	pollHandler             *poll_handler.PollHandler
 	serverHandler           server_handler.ServerHandler
+	analyticsHandler        analytics_handler.AnalyticsHandler
 }
 
 func (r *Routes) AssignRoutes(eng *gin.Engine) {
@@ -60,7 +60,8 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 	eng.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	eng.GET("/favicon.ico", func(c *gin.Context) {
-		c.Status(http.StatusNoContent)
+		c.Header("Content-Type", "image/png")
+		c.File("manager/dist/assets/argo-brand.png")
 	})
 
 	// Rotas para o gerenciador React (sem autenticação)
@@ -77,7 +78,19 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 
 	eng.GET("/server/ok", r.serverHandler.ServerOk)
 
-	routes := eng.Group("/instance")
+	routes := eng.Group("/analytics")
+	{
+		routes.Use(r.authMiddleware.AuthAdmin)
+		{
+			routes.GET("/dashboard", r.analyticsHandler.Dashboard)
+			routes.GET("/conversations", r.analyticsHandler.Conversations)
+			routes.GET("/messages", r.analyticsHandler.Messages)
+			routes.GET("/settings", r.analyticsHandler.Settings)
+			routes.PUT("/settings", r.analyticsHandler.UpdateSettings)
+		}
+	}
+
+	routes = eng.Group("/instance")
 	{
 		routes.Use(r.authMiddleware.AuthAdmin)
 		{
@@ -261,6 +274,7 @@ func NewRouter(
 	newsletterHandler newsletter_handler.NewsletterHandler,
 	pollHandler *poll_handler.PollHandler,
 	serverHandler server_handler.ServerHandler,
+	analyticsHandler analytics_handler.AnalyticsHandler,
 ) *Routes {
 	return &Routes{
 		authMiddleware:          authMiddleware,
@@ -277,5 +291,6 @@ func NewRouter(
 		newsletterHandler:       newsletterHandler,
 		pollHandler:             pollHandler,
 		serverHandler:           serverHandler,
+		analyticsHandler:        analyticsHandler,
 	}
 }

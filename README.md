@@ -131,6 +131,8 @@ Evolution Go requires a license to operate. On first run:
 
 The license status persists in the database (`runtime_configs` table). Heartbeats are sent periodically to maintain activation.
 
+Dashboard operacional, captura em runtime e consulta estruturada de conversas: consulte [`docs/analytics-dashboard.md`](docs/analytics-dashboard.md).
+
 ---
 
 ## API Documentation

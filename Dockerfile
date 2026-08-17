@@ -17,6 +17,18 @@ COPY . .
 ARG VERSION=dev
 RUN CGO_ENABLED=1 go build -ldflags "-X main.version=${VERSION}" -o server ./cmd/evolution-go
 
+FROM node:24-alpine AS manager-build
+
+WORKDIR /manager
+
+COPY manager/ ./
+
+# The upstream project ships only a compiled Manager bundle. Our source-owned
+# dashboard/conversation extensions are rebuilt and their integration markers
+# are verified on every image build.
+RUN node scripts/build.mjs \
+    && node --check src/argo-manager.js
+
 FROM alpine:3.19.1 AS final
 
 # poppler-utils provides pdftoppm, used to rasterize PDF page 1 for /send/media document thumbnails
@@ -25,7 +37,7 @@ RUN apk update && apk add --no-cache tzdata ffmpeg libjpeg-turbo libwebp poppler
 WORKDIR /app
 
 COPY --from=build /build/server .
-COPY --from=build /build/manager/dist ./manager/dist
+COPY --from=manager-build /manager/dist ./manager/dist
 COPY --from=build /build/VERSION ./VERSION
 
 ENV TZ=America/Sao_Paulo
