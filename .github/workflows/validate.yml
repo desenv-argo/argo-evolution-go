@@ -37,10 +37,6 @@ jobs:
             base_sha=$(git merge-base HEAD "origin/$DEFAULT_BRANCH")
           fi
 
-          # Keep the exact formatter patch visible in the job log while this
-          # PR is being stabilized in environments without a local Go SDK.
-          gofmt -d pkg/sendMessage/service/send_service.go || true
-
           newly_unformatted=""
           while IFS= read -r file; do
             [ -n "$file" ] || continue

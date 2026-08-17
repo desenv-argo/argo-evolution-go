@@ -59,7 +59,7 @@ type sendService struct {
 	clientPointer     map[string]*whatsmeow.Client
 	whatsmeowService  whatsmeow_service.WhatsmeowService
 	messageRepository message_repository.MessageRepository
-	captureGate        *analytics_settings.CaptureGate
+	captureGate       *analytics_settings.CaptureGate
 	config            *config.Config
 	loggerWrapper     *logger_wrapper.LoggerManager
 }
@@ -3391,7 +3391,7 @@ func NewSendService(
 		clientPointer:     clientPointer,
 		whatsmeowService:  whatsmeowService,
 		messageRepository: messageRepository,
-		captureGate:        captureGate,
+		captureGate:       captureGate,
 		config:            config,
 		loggerWrapper:     loggerWrapper,
 	}
