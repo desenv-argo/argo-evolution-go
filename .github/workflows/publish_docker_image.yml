@@ -69,13 +69,21 @@ jobs:
       # the CD loop, points App Service at an immutable tag, and makes Azure pull
       # the new image without a manual restart or a mutable :latest cache race.
       - name: Validate deployment configuration
+        id: deployment_config
         env:
           AZURE_WEBAPP_PUBLISH_PROFILE: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
         run: |
+          if [ -z "$WEBAPP_NAME" ] && [ -z "$AZURE_WEBAPP_PUBLISH_PROFILE" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Explicit App Service deployment is not configured; image publishing completed and the existing Azure deployment configuration remains unchanged."
+            exit 0
+          fi
           test -n "$WEBAPP_NAME" || { echo "Repository variable AZURE_WEBAPP_NAME is required"; exit 1; }
           test -n "$AZURE_WEBAPP_PUBLISH_PROFILE" || { echo "Repository secret AZURE_WEBAPP_PUBLISH_PROFILE is required"; exit 1; }
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
 
       - name: Deploy immutable image to Azure App Service
+        if: ${{ steps.deployment_config.outputs.enabled == 'true' }}
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.WEBAPP_NAME }}
@@ -83,7 +91,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
 
       - name: Verify application health
-        if: ${{ vars.AZURE_WEBAPP_HEALTHCHECK_URL != '' }}
+        if: ${{ steps.deployment_config.outputs.enabled == 'true' && vars.AZURE_WEBAPP_HEALTHCHECK_URL != '' }}
         env:
           HEALTHCHECK_URL: ${{ vars.AZURE_WEBAPP_HEALTHCHECK_URL }}
         run: |
