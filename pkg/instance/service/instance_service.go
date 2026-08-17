@@ -411,88 +411,86 @@ func (i instances) Status(instance *instance_model.Instance) (*StatusStruct, err
 	}, nil
 }
 
+var ErrSessionAlreadyLoggedIn = errors.New("session already logged in")
+
+const (
+	qrGenerationTimeout = 15 * time.Second
+	qrPollInterval      = 500 * time.Millisecond
+)
+
+func qrNeedsNewRuntime(clientExists, loggedIn bool) (bool, error) {
+	if loggedIn {
+		return false, ErrSessionAlreadyLoggedIn
+	}
+
+	return !clientExists, nil
+}
+
 func (i instances) GetQr(instance *instance_model.Instance) (*QrcodeStruct, error) {
 	logger := i.loggerWrapper.GetLogger(instance.Id)
 	client := i.clientPointer[instance.Id]
 
-	// Se não há cliente ou o cliente está logado, precisamos iniciar um novo cliente
-	if client == nil || client.IsLoggedIn() {
-		if client != nil && client.IsLoggedIn() {
-			logger.LogInfo("[%s] Client is logged in, starting new instance for QR code", instance.Id)
-		} else {
-			logger.LogInfo("[%s] No client found, starting new instance for QR code", instance.Id)
-		}
-
-		// Iniciar nova instância para gerar QR code
-		err := i.whatsmeowService.StartInstance(instance.Id)
-		if err != nil {
-			logger.LogError("[%s] Failed to start instance: %v", instance.Id, err)
-			return nil, fmt.Errorf("failed to start instance: %w", err)
-		}
-
-		// Aguardar um pouco para o cliente iniciar e gerar QR code
-		logger.LogInfo("[%s] Waiting for QR code generation...", instance.Id)
-		time.Sleep(3 * time.Second)
-
-		// Verificar novamente se há cliente
-		client = i.clientPointer[instance.Id]
-		if client != nil && client.IsLoggedIn() {
-			return nil, fmt.Errorf("session already logged in")
-		}
-	} else if !client.IsConnected() {
-		// Se o cliente existe mas não está conectado, pode estar aguardando QR code
-		logger.LogInfo("[%s] Client exists but not connected, checking for existing QR code", instance.Id)
-	}
-
-	// Buscar instância atualizada do banco para pegar o QR code mais recente
-	instance, err := i.instanceRepository.GetInstanceByID(instance.Id)
+	startRuntime, err := qrNeedsNewRuntime(client != nil, client != nil && client.IsLoggedIn())
 	if err != nil {
+		logger.LogInfo("[%s] QR requested for a logged-in session; keeping the current runtime", instance.Id)
 		return nil, err
 	}
 
-	// If a passkey ceremony is in progress, there is no QR to scan — return the
-	// passkey stage + the #wapk openUrl so the manager can render the
-	// "Abrir WhatsApp Web" button. Checked before the empty-QR branch because
-	// during a passkey ceremony instance.Qrcode is empty.
-	if store := i.whatsmeowService.PasskeyCeremonyStore(); store != nil {
-		if token, state, ok := store.StateByInstance(instance.Id); ok {
-			logger.LogInfo("[%s] Passkey ceremony active (stage=%s) — returning passkey info instead of QR", instance.Id, state.Stage)
+	if startRuntime {
+		logger.LogInfo("[%s] No client found, starting new instance for QR code", instance.Id)
+		if err = i.whatsmeowService.StartInstance(instance.Id); err != nil {
+			logger.LogError("[%s] Failed to start instance: %v", instance.Id, err)
+			return nil, fmt.Errorf("failed to start instance: %w", err)
+		}
+	} else if !client.IsConnected() {
+		logger.LogInfo("[%s] Client exists and is waiting for QR code", instance.Id)
+	}
+
+	logger.LogInfo("[%s] Waiting up to %s for QR code generation", instance.Id, qrGenerationTimeout)
+	deadline := time.Now().Add(qrGenerationTimeout)
+
+	for {
+		currentInstance, repositoryErr := i.instanceRepository.GetInstanceByID(instance.Id)
+		if repositoryErr != nil {
+			return nil, repositoryErr
+		}
+
+		// A passkey ceremony has no QR to scan. Check on every polling cycle so
+		// the first request can return the passkey flow as soon as it starts.
+		if store := i.whatsmeowService.PasskeyCeremonyStore(); store != nil {
+			if token, state, ok := store.StateByInstance(instance.Id); ok {
+				logger.LogInfo("[%s] Passkey ceremony active (stage=%s) — returning passkey info instead of QR", instance.Id, state.Stage)
+				return &QrcodeStruct{
+					PasskeyStage:   state.Stage,
+					PasskeyCode:    state.Code,
+					PasskeyOpenURL: buildPasskeyOpenURL(token),
+				}, nil
+			}
+		}
+
+		if currentInstance.Qrcode != "" {
+			parts := strings.SplitN(currentInstance.Qrcode, "|", 2)
+			if len(parts) < 2 {
+				return nil, fmt.Errorf("invalid QR code format")
+			}
+
 			return &QrcodeStruct{
-				PasskeyStage:   state.Stage,
-				PasskeyCode:    state.Code,
-				PasskeyOpenURL: buildPasskeyOpenURL(token),
+				Qrcode: parts[0],
+				Code:   parts[1],
 			}, nil
 		}
-	}
 
-	code := instance.Qrcode
-	if code == "" {
-		// Se não há QR code ainda, aguardar um pouco mais e tentar novamente
-		logger.LogInfo("[%s] No QR code available yet, waiting a bit more...", instance.Id)
-		time.Sleep(2 * time.Second)
-
-		instance, err = i.instanceRepository.GetInstanceByID(instance.Id)
-		if err != nil {
-			return nil, err
+		client = i.clientPointer[instance.Id]
+		if client != nil && client.IsLoggedIn() {
+			return nil, ErrSessionAlreadyLoggedIn
 		}
 
-		code = instance.Qrcode
-		if code == "" {
+		if time.Now().After(deadline) {
 			return nil, fmt.Errorf("no QR code available. Please wait a moment and try again")
 		}
-	}
 
-	parts := strings.Split(code, "|")
-	if len(parts) < 2 {
-		return nil, fmt.Errorf("invalid QR code format")
+		time.Sleep(qrPollInterval)
 	}
-
-	qr := &QrcodeStruct{
-		Qrcode: parts[0],
-		Code:   parts[1],
-	}
-
-	return qr, nil
 }
 
 // buildPasskeyOpenURL builds the URL the manager opens to start the passkey
