@@ -12,7 +12,6 @@ concurrency:
 env:
   REGISTRY: argoevolutiongoacr.azurecr.io
   IMAGE_NAME: argo-evolution-go
-  WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
 
 jobs:
   build_deploy:
@@ -65,41 +64,6 @@ jobs:
       - name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
 
-      # Pushing an image to ACR is CI only. This explicit deployment step closes
-      # the CD loop, points App Service at an immutable tag, and makes Azure pull
-      # the new image without a manual restart or a mutable :latest cache race.
-      - name: Validate deployment configuration
-        id: deployment_config
-        env:
-          AZURE_WEBAPP_PUBLISH_PROFILE: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-        run: |
-          if [ -z "$WEBAPP_NAME" ] && [ -z "$AZURE_WEBAPP_PUBLISH_PROFILE" ]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Explicit App Service deployment is not configured; image publishing completed and the existing Azure deployment configuration remains unchanged."
-            exit 0
-          fi
-          test -n "$WEBAPP_NAME" || { echo "Repository variable AZURE_WEBAPP_NAME is required"; exit 1; }
-          test -n "$AZURE_WEBAPP_PUBLISH_PROFILE" || { echo "Repository secret AZURE_WEBAPP_PUBLISH_PROFILE is required"; exit 1; }
-          echo "enabled=true" >> "$GITHUB_OUTPUT"
-
-      - name: Deploy immutable image to Azure App Service
-        if: ${{ steps.deployment_config.outputs.enabled == 'true' }}
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: ${{ env.WEBAPP_NAME }}
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
-
-      - name: Verify application health
-        if: ${{ steps.deployment_config.outputs.enabled == 'true' && vars.AZURE_WEBAPP_HEALTHCHECK_URL != '' }}
-        env:
-          HEALTHCHECK_URL: ${{ vars.AZURE_WEBAPP_HEALTHCHECK_URL }}
-        run: |
-          for attempt in $(seq 1 18); do
-            if curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_URL"; then
-              exit 0
-            fi
-            echo "Health check attempt $attempt/18 failed; waiting for the new container"
-            sleep 10
-          done
-          exit 1
+      # Azure App Service watches argo-evolution-go:latest through the ACR
+      # continuous-deployment webhook. Publishing this tag triggers the App
+      # Service to pull the new image and replace the running container.
