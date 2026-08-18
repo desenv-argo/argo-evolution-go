@@ -72,12 +72,21 @@ O Dockerfile executa essa validação em todos os builds da imagem.
 
 ## Deploy automático no Azure
 
-O workflow de produção publica três tags no ACR: a versão, `latest` e a tag imutável `sha-<commit>`. Em seguida, `azure/webapps-deploy` aponta o App Service para a tag imutável exata. Essa troca de configuração faz o App Service baixar e iniciar a imagem nova; não é necessário reiniciar o serviço manualmente e o deploy não depende de o Azure perceber uma alteração na tag mutável `latest`.
+O workflow de produção publica três tags no ACR: a versão, `latest` e a tag imutável `sha-<commit>`. O App Service `app-evolution-go-prod` está configurado para executar `argo-evolution-go:latest` usando a identidade gerenciada `ua-id-9008`.
 
-Configure uma única vez no repositório GitHub:
+O Centro de Implantação do App Service mantém a implantação contínua habilitada. Ao receber um push da tag `latest`, o ACR chama o webhook do App Service, que baixa a imagem nova e substitui o container em execução. Portanto, não é necessário reiniciar o serviço manualmente.
 
-- variável `AZURE_WEBAPP_NAME`: nome do App Service;
-- secret `AZURE_WEBAPP_PUBLISH_PROFILE`: conteúdo integral do perfil de publicação baixado no App Service;
-- variável opcional `AZURE_WEBAPP_HEALTHCHECK_URL`: URL completa de health check, por exemplo `https://evogo.argo.app.br/server/ok`.
+O repositório GitHub precisa somente dos secrets usados para publicar no ACR:
 
-Se uma configuração obrigatória estiver ausente, o workflow falha com uma mensagem clara depois do build, em vez de indicar sucesso enquanto a imagem permanece apenas no registro.
+- `ACR_USERNAME`;
+- `ACR_PASSWORD`.
+
+No Azure, mantenha estas configurações:
+
+- registro `argoevolutiongoacr`;
+- imagem `argo-evolution-go`;
+- tag `latest`;
+- autenticação de pull pela identidade gerenciada `ua-id-9008`;
+- implantação contínua habilitada e webhook do ACR ativo.
+
+As tags `sha-<commit>` permanecem disponíveis para auditoria e rollback, embora o webhook de produção acompanhe `latest`.
