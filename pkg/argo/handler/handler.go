@@ -159,4 +159,3 @@ func (h *handler) filters(ctx *gin.Context) (argo_model.AttemptFilters, error) {
 func NewHandler(service argo_service.Service) Handler {
 	return &handler{service: service, now: time.Now}
 }
-
