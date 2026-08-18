@@ -164,6 +164,13 @@ const styles = String.raw`
   .error-breakdown { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 12px; }
   .error-token { border: 1px solid rgba(255,93,115,.15); border-radius: 6px; background: rgba(255,93,115,.055); color: #dca6ae; padding: 5px 7px; font-size: 9px; }
   .pagination { justify-content: space-between; gap: 12px; border-top: 1px solid var(--argo-border); padding: 9px 14px; color: var(--argo-muted); font-size: 9px; }
+  .gateway-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
+  .usage-list { display: grid; gap: 7px; }
+  .usage-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; border-bottom: 1px solid rgba(255,255,255,.055); padding: 7px 0; }
+  .usage-row:last-child { border-bottom: 0; }
+  .usage-key { overflow: hidden; font-size: 11px; font-weight: 720; text-overflow: ellipsis; white-space: nowrap; }
+  .usage-meta { color: var(--argo-muted); font-size: 9px; }
+  .usage-total { color: #dce5df; font-size: 12px; font-weight: 760; text-align: right; }
   .dialog-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.68); padding: 20px; backdrop-filter: blur(3px); }
   .dialog-backdrop[hidden] { display: none; }
   .dialog { width: min(560px, 100%); max-height: min(760px, calc(100vh - 40px)); overflow: auto; border: 1px solid var(--argo-border-strong); border-radius: 11px; background: #101411; box-shadow: 0 24px 80px rgba(0,0,0,.48); }
@@ -244,6 +251,7 @@ const styles = String.raw`
     .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .dashboard-grid { grid-template-columns: 1fr; }
     .integration-grid { grid-template-columns: 1fr; }
+	.gateway-grid { grid-template-columns: 1fr; }
 	.lifecycle-layout { grid-template-columns: 1fr; }
   }
   @media (max-width: 820px) {
@@ -694,6 +702,11 @@ class ArgoIntegrations extends ArgoBaseElement {
         </header>
         <div class="error" data-error hidden></div>
         <section class="metrics integration-summary" data-summary></section>
+        <section class="gateway-grid">
+          <article class="panel"><div class="panel-header"><div><h2 class="panel-title">Uso por aplicação</h2><p class="panel-subtitle">Quem está consumindo o gateway no período</p></div></div><div class="panel-body usage-list" data-application-usage></div></article>
+          <article class="panel"><div class="panel-header"><div><h2 class="panel-title">Uso por instância</h2><p class="panel-subtitle">Distribuição e falhas por canal WhatsApp</p></div></div><div class="panel-body usage-list" data-instance-usage></div></article>
+          <article class="panel"><div class="panel-header"><div><h2 class="panel-title">Sinais operacionais</h2><p class="panel-subtitle">Entrega, leitura e categorias de falha</p></div></div><div class="panel-body usage-list" data-gateway-signals></div></article>
+        </section>
         <section class="integration-grid">
           <article class="panel">
             <div class="panel-header"><div><h2 class="panel-title">Aplicações</h2><p class="panel-subtitle">Sistemas autorizados a identificar suas operações</p></div><span class="status-pill" data-app-count>0</span></div>
@@ -794,15 +807,15 @@ class ArgoIntegrations extends ArgoBaseElement {
     this.setError("");
     try {
       const filters = this.operationFilters();
-      const [summary, attempts, healthSummary] = await Promise.all([
-        request("/argo/v1/operations/summary", filters, signal),
+      const [overview, attempts] = await Promise.all([
+        request("/argo/v1/operations/overview", filters, signal),
         request("/argo/v1/operations/attempts", filters, signal),
-        request("/argo/v1/health/summary", filters, signal),
       ]);
-      this.summary = summary || {};
+      this.overview = overview || {};
+      this.summary = this.overview.attempts || {};
       this.attempts = Array.isArray(attempts) ? attempts : [];
-      this.healthSummary = healthSummary || {};
       this.renderSummary();
+      this.renderGatewayUsage();
       this.renderErrors();
       this.renderAttempts();
     } catch (error) {
@@ -817,17 +830,17 @@ class ArgoIntegrations extends ArgoBaseElement {
   }
 
   renderSummary() {
-    const enabled = this.applications.filter((item) => item.active).length;
-    const healthy = Number(this.healthSummary?.healthy || 0);
-    const unhealthy = Number(this.healthSummary?.degraded || 0) + Number(this.healthSummary?.offline || 0);
     const total = Number(this.summary?.total || 0);
     const failed = Number(this.summary?.failed || 0);
     const failureRate = total ? (failed / total) * 100 : 0;
+    const gatewayState = this.overview?.state || "unknown";
+    const stateLabels = { healthy: "Saudável", degraded: "Degradado", unhealthy: "Crítico", unknown: "Desconhecido" };
+    const uptimeHours = Math.floor(Number(this.overview?.runtime?.uptime_seconds || 0) / 3600);
     const cards = [
-      ["Aplicações", this.applications.length, `${enabled} habilitadas`, ""],
-      ["Saúde das integrações", healthy, unhealthy ? `${unhealthy} requerem atenção` : `${this.healthSummary?.unknown || 0} aguardando heartbeat`, unhealthy ? "bad" : healthy ? "good" : ""],
+      ["Gateway", stateLabels[gatewayState], `v${this.overview?.runtime?.version || "0.0.0"} · uptime ${uptimeHours}h`, gatewayState === "healthy" ? "good" : gatewayState === "degraded" ? "warn" : "bad"],
       ["Tentativas", total, `${numberFormatter.format(this.summary?.succeeded || 0)} aceitas pela API`, ""],
       ["Taxa de falha", `${percentFormatter.format(failureRate)}%`, `${numberFormatter.format(failed)} falhas`, failed ? "bad" : "good"],
+      ["Legacy / unknown", `${percentFormatter.format(this.overview?.legacy_percentage || 0)}%`, `${numberFormatter.format(this.overview?.legacy_unknown || 0)} sem identidade Argo`, this.overview?.legacy_unknown ? "warn" : "good"],
     ];
     this.shadowRoot.querySelector("[data-summary]").replaceChildren(...cards.map(([label, value, note, tone]) => {
       const card = element("article", "card");
@@ -835,6 +848,32 @@ class ArgoIntegrations extends ArgoBaseElement {
       head.append(element("span", "metric-label", label), element("span", `metric-icon ${tone}`, "•"));
       card.append(head, element("div", `metric-value ${tone}`, typeof value === "number" ? numberFormatter.format(value) : value), element("div", "metric-note", note));
       return card;
+    }));
+  }
+
+  renderGatewayUsage() {
+    const renderUsage = (target, items) => {
+      if (!items?.length) { target.replaceChildren(element("div", "operation-muted", "Sem tráfego no período")); return; }
+      target.replaceChildren(...items.slice(0, 8).map((item) => {
+        const row = element("div", "usage-row");
+        const info = element("div");
+        const failureRate = item.total ? (Number(item.failed || 0) / Number(item.total)) * 100 : 0;
+        info.append(element("div", "usage-key", item.key), element("div", "usage-meta", `${percentFormatter.format(failureRate)}% falhas · Pm ${Math.round(item.average_duration_ms || 0)} ms`));
+        row.append(info, element("div", "usage-total", numberFormatter.format(item.total || 0)));
+        return row;
+      }));
+    };
+    renderUsage(this.shadowRoot.querySelector("[data-application-usage]"), this.overview?.applications);
+    renderUsage(this.shadowRoot.querySelector("[data-instance-usage]"), this.overview?.instances);
+    const lifecycle = this.overview?.lifecycle || {};
+    const signals = [
+      ["Taxa de entrega", `${percentFormatter.format(lifecycle.delivery_rate || 0)}%`],
+      ["Taxa de leitura", `${percentFormatter.format(lifecycle.read_rate || 0)}%`],
+      ["Pendentes envelhecidas", numberFormatter.format(lifecycle.pending_aged || 0)],
+      ...((this.overview?.error_categories || []).slice(0, 5).map((item) => [`${item.category || "internal"} · ${item.code || "UNKNOWN"}`, numberFormatter.format(item.count || 0)])),
+    ];
+    this.shadowRoot.querySelector("[data-gateway-signals]").replaceChildren(...signals.map(([label, value]) => {
+      const row = element("div", "usage-row"); row.append(element("div", "usage-key", label), element("div", "usage-total", value)); return row;
     }));
   }
 

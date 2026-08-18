@@ -146,6 +146,39 @@ type AttemptSummary struct {
 	Errors             []ErrorBreakdown `json:"errors"`
 }
 
+type GatewayUsage struct {
+	Key                string    `json:"key"`
+	Total              int64     `json:"total"`
+	Succeeded          int64     `json:"succeeded"`
+	Failed             int64     `json:"failed"`
+	UnverifiedIdentity int64     `json:"unverified_identity"`
+	AverageDurationMS  float64   `json:"average_duration_ms"`
+	LastActivityAt     time.Time `json:"last_activity_at"`
+}
+
+type GatewayRuntime struct {
+	Version   string    `json:"version"`
+	CommitSHA string    `json:"commit_sha,omitempty"`
+	StartedAt time.Time `json:"started_at"`
+	UptimeSec int64     `json:"uptime_seconds"`
+}
+
+type GatewayOperationsOverview struct {
+	From             time.Time          `json:"from"`
+	To               time.Time          `json:"to"`
+	GeneratedAt      time.Time          `json:"generated_at"`
+	State            string             `json:"state"`
+	Runtime          GatewayRuntime     `json:"runtime"`
+	Attempts         AttemptSummary     `json:"attempts"`
+	Lifecycle        LifecycleSummary   `json:"lifecycle"`
+	Applications     []GatewayUsage     `json:"applications"`
+	Instances        []GatewayUsage     `json:"instances"`
+	ErrorCategories  []LifecycleFailure `json:"error_categories"`
+	LegacyUnknown    int64              `json:"legacy_unknown"`
+	LegacyPercentage float64            `json:"legacy_percentage"`
+	Signals          []string           `json:"signals"`
+}
+
 // MessageLifecycleEvent is an immutable fact in the operational lifecycle of
 // a message. It deliberately duplicates correlation attributes from the
 // attempt so historical evidence remains queryable even when an application

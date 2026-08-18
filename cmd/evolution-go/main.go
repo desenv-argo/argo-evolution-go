@@ -79,6 +79,15 @@ var devMode = flag.Bool("dev", false, "Enable development mode")
 
 var version = "0.0.0"
 
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func init() {
 	// ldflags -X main.version= sets this at compile time.
 	// If not set (or still default), try reading from VERSION file.
@@ -171,7 +180,9 @@ func setupRouter(ctx context.Context, db *gorm.DB, authDB *sql.DB, sqliteDB *sql
 	messageRepository := message_repository.NewMessageRepository(db)
 	analyticsRepository := analytics_repository.NewAnalyticsRepository(db)
 	argoRepository := argo_repository.NewRepository(db)
-	argoService := argo_service.NewService(argoRepository)
+	argoService := argo_service.NewService(argoRepository, argo_model.GatewayRuntime{
+		Version: version, CommitSHA: firstNonEmpty(os.Getenv("GIT_COMMIT_SHA"), os.Getenv("GITHUB_SHA")), StartedAt: time.Now().UTC(),
+	})
 	pendingAgedConfig := argo_worker.PendingAgedConfigFromEnvironment()
 	pendingAgedWorker := argo_worker.NewPendingAgedWorker(
 		argoService,

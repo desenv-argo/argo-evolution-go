@@ -20,6 +20,7 @@ type Handler interface {
 	ListApplications(ctx *gin.Context)
 	ListAttempts(ctx *gin.Context)
 	AttemptSummary(ctx *gin.Context)
+	GatewayOperationsOverview(ctx *gin.Context)
 	Heartbeat(ctx *gin.Context)
 	ListHeartbeats(ctx *gin.Context)
 	HealthSummary(ctx *gin.Context)
@@ -170,6 +171,21 @@ func (h *handler) AttemptSummary(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"data": summary})
+}
+
+func (h *handler) GatewayOperationsOverview(ctx *gin.Context) {
+	filters, err := h.filters(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	overview, err := h.service.GatewayOperationsOverview(ctx.Request.Context(), filters)
+	if err != nil {
+		logger.LogError("[ARGO_OPERATIONS] failed to load gateway overview: %v", err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load gateway operations overview"})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"data": overview})
 }
 
 func (h *handler) filters(ctx *gin.Context) (argo_model.AttemptFilters, error) {

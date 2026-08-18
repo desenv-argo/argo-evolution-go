@@ -134,6 +134,13 @@ continuam no funil como `legacy/unknown`.
 
 ## Fase 5 — operação e decisão
 
+### Centro de operações do gateway
+
+- `GET /argo/v1/operations/overview` consolida saúde operacional, versão, commit, uptime, tentativas, lifecycle e sinais de degradação;
+- o Manager apresenta consumo por aplicação e instância, taxa de falha, tráfego `legacy/unknown`, entrega, leitura e categorias de erro;
+- o estado do gateway considera taxa de falha, mensagens `pending_aged` e tráfego sem identidade Argo, sem depender do ERP ou de aplicações externas;
+- `GIT_COMMIT_SHA` identifica o commit implantado quando informado pelo ambiente de build/deploy.
+
 ### Captura de conversas e anexos
 
 - mensagens recuperadas por `HistorySync` também alimentam a visão de conversas, cobrindo envios feitos por outros dispositivos e períodos offline;
