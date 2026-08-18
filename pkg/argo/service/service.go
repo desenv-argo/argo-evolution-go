@@ -55,6 +55,13 @@ type HeartbeatInput struct {
 	Message   string `json:"message"`
 }
 
+type LifecycleBackfillInput struct {
+	From    time.Time `json:"from" binding:"required"`
+	To      time.Time `json:"to" binding:"required"`
+	Limit   int       `json:"limit"`
+	Execute bool      `json:"execute"`
+}
+
 type Service interface {
 	CreateApplication(ctx context.Context, input ApplicationInput) (*ApplicationCredential, error)
 	UpdateApplication(ctx context.Context, id string, input ApplicationInput) (*argo_model.Application, error)
@@ -71,6 +78,7 @@ type Service interface {
 	ReconcilePendingAged(ctx context.Context) (int64, error)
 	ListLifecycleEvents(ctx context.Context, filters argo_model.LifecycleFilters) ([]argo_model.MessageLifecycleEvent, error)
 	LifecycleSummary(ctx context.Context, filters argo_model.LifecycleFilters) (*argo_model.LifecycleSummary, error)
+	BackfillLifecycle(ctx context.Context, input LifecycleBackfillInput) (*argo_model.LifecycleBackfillReport, error)
 }
 
 type service struct {
@@ -225,6 +233,34 @@ func (s *service) LifecycleSummary(ctx context.Context, filters argo_model.Lifec
 	summary := summarizeLifecycle(events, filters.From, filters.To)
 	summary.PendingAgeMinutes = int64(s.pendingAge.Minutes())
 	return summary, nil
+}
+
+func (s *service) BackfillLifecycle(ctx context.Context, input LifecycleBackfillInput) (*argo_model.LifecycleBackfillReport, error) {
+	options, err := lifecycleBackfillOptions(input)
+	if err != nil {
+		return nil, err
+	}
+	return s.repository.BackfillLifecycle(ctx, options)
+}
+
+func lifecycleBackfillOptions(input LifecycleBackfillInput) (argo_model.LifecycleBackfillOptions, error) {
+	from, to := input.From.UTC(), input.To.UTC()
+	if from.IsZero() || to.IsZero() || !from.Before(to) {
+		return argo_model.LifecycleBackfillOptions{}, errors.New("from must be before to")
+	}
+	if to.Sub(from) > 31*24*time.Hour {
+		return argo_model.LifecycleBackfillOptions{}, errors.New("backfill period cannot exceed 31 days")
+	}
+	limit := input.Limit
+	if limit == 0 {
+		limit = 1000
+	}
+	if limit < 1 || limit > 5000 {
+		return argo_model.LifecycleBackfillOptions{}, errors.New("limit must be between 1 and 5000")
+	}
+	return argo_model.LifecycleBackfillOptions{
+		From: from, To: to, Limit: limit, Execute: input.Execute,
+	}, nil
 }
 
 type lifecycleTimes struct {

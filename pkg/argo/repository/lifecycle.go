@@ -8,11 +8,96 @@ import (
 	"time"
 
 	argo_model "github.com/evolution-foundation/evolution-go/pkg/argo/model"
+	message_model "github.com/evolution-foundation/evolution-go/pkg/message/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 const maxLifecycleSummaryEvents = 100000
+
+func (r *repository) BackfillLifecycle(ctx context.Context, options argo_model.LifecycleBackfillOptions) (*argo_model.LifecycleBackfillReport, error) {
+	report := &argo_model.LifecycleBackfillReport{
+		From: options.From.UTC(), To: options.To.UTC(), Execute: options.Execute,
+	}
+	var attempts []argo_model.MessageAttempt
+	if err := r.db.WithContext(ctx).
+		Where("started_at >= ? AND started_at <= ?", report.From, report.To).
+		Order("started_at ASC, id ASC").Limit(options.Limit).Find(&attempts).Error; err != nil {
+		return nil, err
+	}
+	report.AttemptsScanned = len(attempts)
+
+	eventsByKey := make(map[string]argo_model.MessageLifecycleEvent, len(attempts)*4)
+	attemptsByMessage := make(map[string]*argo_model.MessageAttempt, len(attempts))
+	for index := range attempts {
+		for _, event := range attemptLifecycleEvents(&attempts[index]) {
+			eventsByKey[event.EventKey] = event
+		}
+		attempt := &attempts[index]
+		if attempt.InstanceID != nil && attempt.ProviderMessageID != "" {
+			attemptsByMessage[*attempt.InstanceID+"\x00"+attempt.ProviderMessageID] = attempt
+		}
+	}
+
+	var messages []message_model.Message
+	if err := r.db.WithContext(ctx).
+		Where("sent_at >= ? AND sent_at <= ?", report.From, report.To).
+		Where("(direction = ? OR from_me = ?) AND (delivered_at IS NOT NULL OR read_at IS NOT NULL)", "outbound", true).
+		Order("sent_at ASC, id ASC").Limit(options.Limit).Find(&messages).Error; err != nil {
+		return nil, err
+	}
+	report.MessagesScanned = len(messages)
+	for index := range messages {
+		message := &messages[index]
+		attempt := attemptsByMessage[message.InstanceID+"\x00"+message.MessageID]
+		if message.DeliveredAt != nil {
+			event := receiptLifecycleEvent(message.InstanceID, message.MessageID, "delivered", message.DeliveredAt.UTC(), attempt)
+			if event.MessageType == "" {
+				event.MessageType = message.MessageType
+			}
+			eventsByKey[event.EventKey] = event
+		}
+		if message.ReadAt != nil {
+			event := receiptLifecycleEvent(message.InstanceID, message.MessageID, "read", message.ReadAt.UTC(), attempt)
+			if event.MessageType == "" {
+				event.MessageType = message.MessageType
+			}
+			eventsByKey[event.EventKey] = event
+		}
+	}
+
+	report.CandidateEvents = len(eventsByKey)
+	if len(eventsByKey) == 0 {
+		return report, nil
+	}
+	keys := make([]string, 0, len(eventsByKey))
+	for key := range eventsByKey {
+		keys = append(keys, key)
+	}
+	var existing []string
+	if err := r.db.WithContext(ctx).Model(&argo_model.MessageLifecycleEvent{}).
+		Where("event_key IN ?", keys).Pluck("event_key", &existing).Error; err != nil {
+		return nil, err
+	}
+	report.ExistingEvents = len(existing)
+	for _, key := range existing {
+		delete(eventsByKey, key)
+	}
+	report.PendingEvents = len(eventsByKey)
+	if !options.Execute || len(eventsByKey) == 0 {
+		return report, nil
+	}
+	return report, r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, event := range eventsByKey {
+			result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&event)
+			if result.Error != nil {
+				return result.Error
+			}
+			report.EventsCreated += result.RowsAffected
+		}
+		return nil
+	})
+}
 
 func (r *repository) recordAttemptLifecycle(tx *gorm.DB, attempt *argo_model.MessageAttempt) error {
 	for _, event := range attemptLifecycleEvents(attempt) {
@@ -118,22 +203,9 @@ func (r *repository) RecordReceipt(ctx context.Context, instanceID string, provi
 			if lookup.Error != nil {
 				return lookup.Error
 			}
-			event := argo_model.MessageLifecycleEvent{
-				EventKey:          fmt.Sprintf("receipt:%s:%s:%s", instanceID, providerMessageID, state),
-				ApplicationSlug:   "legacy/unknown",
-				InstanceID:        &instanceID,
-				ProviderMessageID: providerMessageID,
-				State:             state,
-				OccurredAt:        occurredAt.UTC(),
-			}
+			event := receiptLifecycleEvent(instanceID, providerMessageID, state, occurredAt, nil)
 			if lookup.RowsAffected > 0 {
-				event.AttemptID = &attempt.ID
-				event.ApplicationID = attempt.ApplicationID
-				event.ApplicationSlug = attempt.ApplicationSlug
-				event.IdentityVerified = attempt.IdentityVerified
-				event.CorrelationID = attempt.CorrelationID
-				event.IdempotencyKey = attempt.IdempotencyKey
-				event.MessageType = strings.TrimPrefix(path.Base(attempt.Endpoint), "/")
+				event = receiptLifecycleEvent(instanceID, providerMessageID, state, occurredAt, &attempt)
 			}
 			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&event).Error; err != nil {
 				return err
@@ -141,6 +213,30 @@ func (r *repository) RecordReceipt(ctx context.Context, instanceID string, provi
 		}
 		return nil
 	})
+}
+
+func receiptLifecycleEvent(instanceID, providerMessageID, state string, occurredAt time.Time, attempt *argo_model.MessageAttempt) argo_model.MessageLifecycleEvent {
+	event := argo_model.MessageLifecycleEvent{
+		EventKey:          fmt.Sprintf("receipt:%s:%s:%s", instanceID, providerMessageID, state),
+		ApplicationSlug:   "legacy/unknown",
+		InstanceID:        &instanceID,
+		ProviderMessageID: providerMessageID,
+		State:             state,
+		OccurredAt:        occurredAt.UTC(),
+	}
+	if attempt != nil {
+		event.AttemptID = &attempt.ID
+		event.ApplicationID = attempt.ApplicationID
+		event.ApplicationSlug = attempt.ApplicationSlug
+		if event.ApplicationSlug == "" {
+			event.ApplicationSlug = "legacy/unknown"
+		}
+		event.IdentityVerified = attempt.IdentityVerified
+		event.CorrelationID = attempt.CorrelationID
+		event.IdempotencyKey = attempt.IdempotencyKey
+		event.MessageType = strings.TrimPrefix(path.Base(attempt.Endpoint), "/")
+	}
+	return event
 }
 
 func (r *repository) ReconcilePendingAged(ctx context.Context, cutoff time.Time) (int64, error) {

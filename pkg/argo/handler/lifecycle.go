@@ -7,6 +7,7 @@ import (
 	"time"
 
 	argo_model "github.com/evolution-foundation/evolution-go/pkg/argo/model"
+	argo_service "github.com/evolution-foundation/evolution-go/pkg/argo/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -41,6 +42,20 @@ func (h *handler) LifecycleSummary(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"data": summary})
+}
+
+func (h *handler) BackfillLifecycle(ctx *gin.Context) {
+	var input argo_service.LifecycleBackfillInput
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	report, err := h.service.BackfillLifecycle(ctx.Request.Context(), input)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"data": report})
 }
 
 func (h *handler) lifecycleFilters(ctx *gin.Context) (argo_model.LifecycleFilters, error) {

@@ -112,7 +112,21 @@ Status: primeiro vertical slice operacional implementado.
   - `ARGO_MESSAGE_PENDING_RECONCILE_SECONDS` define o intervalo (padrão: 60 segundos);
   - `ARGO_MESSAGE_PENDING_RECONCILE_TIMEOUT_SECONDS` define o timeout de cada execução (padrão: 10 segundos);
   - consultas de eventos e métricas permanecem somente leitura;
-- [ ] backfill opcional para mensagens anteriores à criação da tabela Argo.
+- [x] backfill administrativo opcional para mensagens anteriores à criação da tabela Argo;
+  - `POST /argo/v1/messages/lifecycle/backfill` exige período explícito de no máximo 31 dias;
+  - simula por padrão e somente persiste quando `execute: true`;
+  - é limitado, idempotente e reconstrói apenas tentativas e receipts já persistidos.
+
+Exemplo de simulação segura:
+
+```json
+{
+  "from": "2026-08-01T00:00:00Z",
+  "to": "2026-08-02T00:00:00Z",
+  "limit": 1000,
+  "execute": false
+}
+```
 
 A janela padrão de envelhecimento é 15 minutos e pode ser alterada com
 `ARGO_MESSAGE_PENDING_AGE_MINUTES` (1 a 10.080 minutos). Envios sem headers Argo

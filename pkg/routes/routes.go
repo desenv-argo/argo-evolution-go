@@ -112,6 +112,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.GET("/health/summary", r.argoHandler.HealthSummary)
 			routes.GET("/messages/lifecycle", r.argoHandler.ListLifecycleEvents)
 			routes.GET("/messages/lifecycle/summary", r.argoHandler.LifecycleSummary)
+			routes.POST("/messages/lifecycle/backfill", r.argoHandler.BackfillLifecycle)
 		}
 	}
 
