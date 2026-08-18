@@ -63,7 +63,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=min
+          # Cache availability must not block publishing a valid image.
+          cache-to: type=gha,mode=min,ignore-error=true
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
 
