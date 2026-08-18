@@ -288,6 +288,7 @@ func migrate(db *gorm.DB) {
 		&label_model.Label{},
 		&argo_model.Application{},
 		&argo_model.MessageAttempt{},
+		&argo_model.IntegrationHeartbeat{},
 	); err != nil {
 		log.Fatal(err)
 	}
