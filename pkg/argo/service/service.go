@@ -68,6 +68,7 @@ type Service interface {
 	ListHeartbeats(ctx context.Context, filters argo_model.HeartbeatFilters) ([]argo_model.IntegrationHeartbeat, error)
 	HealthSummary(ctx context.Context, filters argo_model.HeartbeatFilters) (*argo_model.HealthSummary, error)
 	RecordReceipt(ctx context.Context, instanceID string, providerMessageIDs []string, state string, occurredAt time.Time) error
+	ReconcilePendingAged(ctx context.Context) (int64, error)
 	ListLifecycleEvents(ctx context.Context, filters argo_model.LifecycleFilters) ([]argo_model.MessageLifecycleEvent, error)
 	LifecycleSummary(ctx context.Context, filters argo_model.LifecycleFilters) (*argo_model.LifecycleSummary, error)
 }
@@ -208,22 +209,15 @@ func (s *service) RecordReceipt(ctx context.Context, instanceID string, provider
 	return s.repository.RecordReceipt(ctx, instanceID, providerMessageIDs, state, occurredAt)
 }
 
-func (s *service) reconcilePendingAged(ctx context.Context) error {
-	_, err := s.repository.ReconcilePendingAged(ctx, s.now().UTC().Add(-s.pendingAge))
-	return err
+func (s *service) ReconcilePendingAged(ctx context.Context) (int64, error) {
+	return s.repository.ReconcilePendingAged(ctx, s.now().UTC().Add(-s.pendingAge))
 }
 
 func (s *service) ListLifecycleEvents(ctx context.Context, filters argo_model.LifecycleFilters) ([]argo_model.MessageLifecycleEvent, error) {
-	if err := s.reconcilePendingAged(ctx); err != nil {
-		return nil, err
-	}
 	return s.repository.ListLifecycleEvents(ctx, filters)
 }
 
 func (s *service) LifecycleSummary(ctx context.Context, filters argo_model.LifecycleFilters) (*argo_model.LifecycleSummary, error) {
-	if err := s.reconcilePendingAged(ctx); err != nil {
-		return nil, err
-	}
 	events, err := s.repository.LifecycleEvents(ctx, filters)
 	if err != nil {
 		return nil, err

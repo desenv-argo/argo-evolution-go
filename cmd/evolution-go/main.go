@@ -29,6 +29,7 @@ import (
 	argo_model "github.com/evolution-foundation/evolution-go/pkg/argo/model"
 	argo_repository "github.com/evolution-foundation/evolution-go/pkg/argo/repository"
 	argo_service "github.com/evolution-foundation/evolution-go/pkg/argo/service"
+	argo_worker "github.com/evolution-foundation/evolution-go/pkg/argo/worker"
 	call_handler "github.com/evolution-foundation/evolution-go/pkg/call/handler"
 	call_service "github.com/evolution-foundation/evolution-go/pkg/call/service"
 	chat_handler "github.com/evolution-foundation/evolution-go/pkg/chat/handler"
@@ -90,7 +91,7 @@ func init() {
 	}
 }
 
-func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.Config, conn *amqp.Connection, exPath string, runtimeCtx *core.RuntimeContext) *gin.Engine {
+func setupRouter(ctx context.Context, db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.Config, conn *amqp.Connection, exPath string, runtimeCtx *core.RuntimeContext) *gin.Engine {
 	killChannel := make(map[string](chan bool))
 	clientPointer := make(map[string]*whatsmeow.Client)
 
@@ -171,6 +172,14 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	analyticsRepository := analytics_repository.NewAnalyticsRepository(db)
 	argoRepository := argo_repository.NewRepository(db)
 	argoService := argo_service.NewService(argoRepository)
+	pendingAgedConfig := argo_worker.PendingAgedConfigFromEnvironment()
+	pendingAgedWorker := argo_worker.NewPendingAgedWorker(
+		argoService,
+		pendingAgedConfig,
+		argo_worker.PendingAgedLogger{Info: logger.LogInfo, Error: logger.LogError},
+	)
+	logger.LogInfo("[ARGO_LIFECYCLE] starting pending_aged worker: interval=%s timeout=%s", pendingAgedConfig.Interval, pendingAgedConfig.Timeout)
+	go pendingAgedWorker.Run(ctx)
 	captureGate, err := analytics_settings.NewCaptureGate(db, config.DatabaseSaveMessages)
 	if err != nil {
 		log.Fatalf("failed to initialize analytics settings: %v", err)
@@ -470,13 +479,13 @@ func main() {
 		logger.LogInfo("RabbitMQ URL not configured, skipping RabbitMQ connection")
 	}
 
-	r := setupRouter(db, authDB, sqliteDB, cfg, conn, exPath, runtimeCtx)
+	// Shared lifecycle for Argo background workers and the runtime heartbeat.
+	operationalCtx, operationalCancel := context.WithCancel(context.Background())
+	defer operationalCancel()
 
-	// Graceful shutdown with heartbeat
-	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
-	defer heartbeatCancel()
+	r := setupRouter(operationalCtx, db, authDB, sqliteDB, cfg, conn, exPath, runtimeCtx)
 
-	core.StartHeartbeat(heartbeatCtx, runtimeCtx, startTime)
+	core.StartHeartbeat(operationalCtx, runtimeCtx, startTime)
 
 	srv := &http.Server{
 		Addr:    ":" + os.Getenv("SERVER_PORT"),
@@ -496,8 +505,8 @@ func main() {
 	<-quit
 	logger.LogInfo("[SHUTDOWN] Signal received, shutting down...")
 
-	// Stop heartbeat loop
-	heartbeatCancel()
+	// Stop heartbeat and Argo background workers.
+	operationalCancel()
 
 	core.Shutdown(runtimeCtx)
 
