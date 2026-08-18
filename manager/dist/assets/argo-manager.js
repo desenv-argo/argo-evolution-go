@@ -233,6 +233,11 @@ const styles = String.raw`
   .document-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
   .document-action { border: 0; background: transparent; color: #62dfb4; padding: 0; cursor: pointer; font: inherit; font-size: 10px; font-weight: 750; }
   .document-action:hover { text-decoration: underline; }
+  .media-preview { grid-column: 1 / -1; overflow: hidden; max-width: 520px; border-radius: 7px; background: #080b09; }
+  .media-preview img, .media-preview video { display: block; width: 100%; max-height: 360px; object-fit: contain; }
+  .media-preview audio { display: block; width: min(420px, 100%); height: 36px; }
+  .media-status { grid-column: 1 / -1; color: var(--argo-muted); font-size: 10px; }
+  .media-status.unavailable { color: #ffc875; }
   .message-meta { justify-content: flex-end; gap: 7px; margin-top: 7px; color: rgba(220,231,245,.65); font-size: 9px; }
   .load-more { align-self: center; margin-bottom: 2px; }
   @media (max-width: 1120px) {
@@ -367,36 +372,33 @@ function formatFileSize(value) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-async function openCapturedMedia(message, download = false) {
+async function fetchCapturedMedia(message) {
   const auth = authConfig();
   const url = new URL(`${auth.apiUrl}/argo/v1/messages/${encodeURIComponent(message.message_id)}/media`);
   url.searchParams.set("instanceId", message.instance_id);
-  if (download) url.searchParams.set("download", "true");
   const response = await fetch(url, { headers: { apikey: auth.apiKey } });
   if (!response.ok) {
     const fallbackURL = safeMediaURL(message.media_url);
-    if (fallbackURL) {
-      const link = document.createElement("a");
-      link.href = fallbackURL;
-      link.target = download ? "_self" : "_blank";
-      link.rel = "noopener noreferrer";
-      if (download) link.download = message.file_name || `documento-${message.message_id}`;
-      link.click();
-      return;
-    }
+    if (fallbackURL) return { fallbackURL };
     const payload = await response.json().catch(() => ({}));
     throw new Error(payload.error || "O arquivo ainda não está disponível para esta mensagem");
   }
-  const blobURL = URL.createObjectURL(await response.blob());
+  const blob = await response.blob();
+  return { blobURL: URL.createObjectURL(blob), contentType: blob.type || message.mime_type || "application/octet-stream" };
+}
+
+async function openCapturedMedia(message, download = false) {
+  const media = await fetchCapturedMedia(message);
+  const targetURL = media.blobURL || media.fallbackURL;
   if (download) {
     const link = document.createElement("a");
-    link.href = blobURL;
-    link.download = message.file_name || `documento-${message.message_id}`;
+    link.href = targetURL;
+    link.download = message.file_name || `midia-${message.message_id}`;
     link.click();
   } else {
-    window.open(blobURL, "_blank", "noopener,noreferrer");
+    window.open(targetURL, "_blank", "noopener,noreferrer");
   }
-  setTimeout(() => URL.revokeObjectURL(blobURL), 60000);
+  if (media.blobURL) setTimeout(() => URL.revokeObjectURL(media.blobURL), 60000);
 }
 
 class ArgoBaseElement extends HTMLElement {
@@ -1242,6 +1244,7 @@ class ArgoConversations extends ArgoBaseElement {
     this.selected = null;
     this.messages = [];
     this.searchTimer = null;
+    this.mediaObjectURLs = new Set();
     this.render();
     this.loadInitial();
   }
@@ -1249,6 +1252,47 @@ class ArgoConversations extends ArgoBaseElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     clearTimeout(this.searchTimer);
+    this.releaseMediaObjectURLs();
+  }
+
+  releaseMediaObjectURLs() {
+    for (const url of this.mediaObjectURLs || []) URL.revokeObjectURL(url);
+    this.mediaObjectURLs?.clear();
+  }
+
+  async loadMediaPreview(message, card, button) {
+    button.disabled = true;
+    button.textContent = "Carregando...";
+    const status = card.querySelector(".media-status");
+    try {
+      const media = await fetchCapturedMedia(message);
+      const source = media.blobURL || media.fallbackURL;
+      if (media.blobURL) this.mediaObjectURLs.add(media.blobURL);
+      const type = String(message.message_type || "").toLowerCase();
+      let preview;
+      if (type === "image" || type === "sticker") {
+        preview = document.createElement("img");
+        preview.alt = message.caption || message.file_name || "Imagem recebida";
+      } else if (type === "audio") {
+        preview = document.createElement("audio");
+        preview.controls = true;
+      } else {
+        preview = document.createElement("video");
+        preview.controls = true;
+        preview.playsInline = true;
+      }
+      preview.src = source;
+      const container = element("div", "media-preview");
+      container.append(preview);
+      card.append(container);
+      status.textContent = "Prévia carregada";
+      button.remove();
+    } catch {
+      status.textContent = "Mídia indisponível para prévia ou download";
+      status.classList.add("unavailable");
+      button.textContent = "Tentar novamente";
+      button.disabled = false;
+    }
   }
 
   render() {
@@ -1432,6 +1476,7 @@ class ArgoConversations extends ArgoBaseElement {
 
   renderMessages(page, scrollToBottom = true) {
     const target = this.shadowRoot.querySelector("[data-messages]");
+    this.releaseMediaObjectURLs();
     if (!this.messages.length) {
       target.replaceChildren(element("div", "empty", "Nenhuma mensagem encontrada neste periodo."));
       return;
@@ -1440,29 +1485,31 @@ class ArgoConversations extends ArgoBaseElement {
       const bubble = element("article", `message ${message.direction === "outbound" ? "outbound" : ""}`);
       if (message.direction !== "outbound" && (message.push_name || message.participant_jid)) bubble.append(element("div", "sender", message.push_name || message.participant_jid));
       bubble.append(element("div", "message-text", messageBody(message)));
-      const mediaURL = safeMediaURL(message.media_url);
-      if (message.message_type === "document") {
+      const mediaType = String(message.message_type || "").toLowerCase();
+      if (["document", "image", "audio", "video", "sticker"].includes(mediaType)) {
         const card = element("div", "document-card");
-        card.append(element("div", "document-icon", message.mime_type === "application/pdf" ? "PDF" : "DOC"));
+        const labels = { document: message.mime_type === "application/pdf" ? "PDF" : "DOC", image: "IMG", audio: "AUD", video: "VID", sticker: "STK" };
+        card.append(element("div", "document-icon", labels[mediaType]));
         const info = element("div", "document-info");
-        info.append(element("div", "document-name", message.file_name || "Documento"), element("div", "document-size", formatFileSize(message.file_size)));
+        const names = { document: "Documento", image: "Imagem", audio: "Áudio", video: "Vídeo", sticker: "Figurinha" };
+        info.append(element("div", "document-name", message.file_name || names[mediaType]), element("div", "document-size", `${message.mime_type || names[mediaType]} · ${formatFileSize(message.file_size)}`));
         const actions = element("div", "document-actions");
-        const view = element("button", "document-action", "Visualizar");
+        const view = element("button", "document-action", mediaType === "document" ? "Visualizar" : "Carregar prévia");
         view.type = "button";
-        view.addEventListener("click", () => openCapturedMedia(message).catch((error) => this.setError(error.message)));
+        if (mediaType === "document") view.addEventListener("click", () => openCapturedMedia(message).catch((error) => this.setError(error.message)));
+        else view.addEventListener("click", () => this.loadMediaPreview(message, card, view));
         const download = element("button", "document-action", "Baixar");
         download.type = "button";
-        download.addEventListener("click", () => openCapturedMedia(message, true).catch((error) => this.setError(error.message)));
+        download.addEventListener("click", () => openCapturedMedia(message, true).catch(() => {
+          const status = card.querySelector(".media-status");
+          status.textContent = "Mídia indisponível para prévia ou download";
+          status.classList.add("unavailable");
+        }));
         actions.append(view, download);
         info.append(actions);
         card.append(info);
+        card.append(element("div", "media-status", "Disponível sob demanda"));
         bubble.append(card);
-      } else if (mediaURL) {
-        const link = element("a", "message-media", `Abrir ${message.message_type || "mídia"} ↗`);
-        link.href = mediaURL;
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-        bubble.append(link);
       }
       const meta = element("div", "message-meta");
       meta.append(element("span", "", message.message_type || "mensagem"), element("time", "", dateTimeFormatter.format(new Date(message.sent_at))));

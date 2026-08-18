@@ -180,6 +180,14 @@ func setupRouter(ctx context.Context, db *gorm.DB, authDB *sql.DB, sqliteDB *sql
 	)
 	logger.LogInfo("[ARGO_LIFECYCLE] starting pending_aged worker: interval=%s timeout=%s", pendingAgedConfig.Interval, pendingAgedConfig.Timeout)
 	go pendingAgedWorker.Run(ctx)
+	mediaRetentionConfig := argo_worker.MediaRetentionConfigFromEnvironment()
+	mediaRetentionWorker := argo_worker.NewMediaRetentionWorker(
+		argoService,
+		mediaRetentionConfig,
+		argo_worker.MediaRetentionLogger{Info: logger.LogInfo, Error: logger.LogError},
+	)
+	logger.LogInfo("[ARGO_MEDIA] starting retention worker: retention=%s interval=%s batch=%d", mediaRetentionConfig.Retention, mediaRetentionConfig.Interval, mediaRetentionConfig.BatchSize)
+	go mediaRetentionWorker.Run(ctx)
 	captureGate, err := analytics_settings.NewCaptureGate(db, config.DatabaseSaveMessages)
 	if err != nil {
 		log.Fatalf("failed to initialize analytics settings: %v", err)

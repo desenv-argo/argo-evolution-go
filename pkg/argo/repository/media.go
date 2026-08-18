@@ -2,6 +2,7 @@ package argo_repository
 
 import (
 	"context"
+	"time"
 
 	argo_model "github.com/evolution-foundation/evolution-go/pkg/argo/model"
 	"gorm.io/gorm/clause"
@@ -14,6 +15,21 @@ func (r *repository) SaveMessageMedia(ctx context.Context, media *argo_model.Mes
 			"file_name", "mime_type", "size_bytes", "content", "updated_at",
 		}),
 	}).Create(media).Error
+}
+
+func (r *repository) DeleteMessageMediaBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error) {
+	if limit <= 0 || limit > 5000 {
+		limit = 500
+	}
+	result := r.db.WithContext(ctx).Exec(`
+		DELETE FROM argo_message_media
+		WHERE id IN (
+			SELECT id FROM argo_message_media
+			WHERE created_at < ?
+			ORDER BY created_at ASC
+			LIMIT ?
+		)`, cutoff, limit)
+	return result.RowsAffected, result.Error
 }
 
 func (r *repository) GetMessageMedia(ctx context.Context, instanceID, providerMessageID string) (*argo_model.MessageMedia, error) {
