@@ -323,7 +323,7 @@ func (w whatsmeowService) connectPersistedSession(client *whatsmeow.Client, inst
 
 		w.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] Persisted session connection attempt %d/%d failed: %v", instanceID, attempt, maxAttempts, lastErr)
 		if attempt < maxAttempts {
-			backoff := time.Duration(1 << (attempt - 1)) * time.Second
+			backoff := time.Duration(1<<(attempt-1)) * time.Second
 			time.Sleep(backoff)
 		}
 	}
