@@ -52,4 +52,3 @@ func TestNormalizeHeartbeat(t *testing.T) {
 		t.Fatalf("normalizeHeartbeat(100000) = %d", got)
 	}
 }
-
