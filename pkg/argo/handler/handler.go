@@ -26,6 +26,7 @@ type Handler interface {
 	ListLifecycleEvents(ctx *gin.Context)
 	LifecycleSummary(ctx *gin.Context)
 	BackfillLifecycle(ctx *gin.Context)
+	GetMessageMedia(ctx *gin.Context)
 }
 
 func (h *handler) Heartbeat(ctx *gin.Context) {

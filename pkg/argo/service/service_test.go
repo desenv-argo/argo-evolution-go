@@ -75,6 +75,32 @@ func TestLifecycleBackfillOptionsAreBoundedAndSafeByDefault(t *testing.T) {
 	}
 }
 
+func TestMessageMediaSafetyNormalization(t *testing.T) {
+	if got := sanitizeMediaFileName(`../financeiro\boleto.pdf`, "message-1"); got != ".._financeiro_boleto.pdf" {
+		t.Fatalf("unexpected sanitized filename: %q", got)
+	}
+	if got := sanitizeMediaFileName("", "message-1"); got != "message-1" {
+		t.Fatalf("unexpected fallback filename: %q", got)
+	}
+	if got := normalizeMediaType("application/pdf; charset=binary"); got != "application/pdf" {
+		t.Fatalf("unexpected normalized media type: %q", got)
+	}
+	if got := normalizeMediaType("application/pdf\r\nX-Test: unsafe"); got != "application/octet-stream" {
+		t.Fatalf("unsafe media type was accepted: %q", got)
+	}
+}
+
+func TestMessageMediaMaxBytesUsesSafeBounds(t *testing.T) {
+	t.Setenv("ARGO_MESSAGE_MEDIA_MAX_BYTES", "1048576")
+	if got := messageMediaMaxBytesFromEnvironment(); got != 1048576 {
+		t.Fatalf("unexpected configured limit: %d", got)
+	}
+	t.Setenv("ARGO_MESSAGE_MEDIA_MAX_BYTES", "999999999")
+	if got := messageMediaMaxBytesFromEnvironment(); got != 25*1024*1024 {
+		t.Fatalf("invalid limit must use default: %d", got)
+	}
+}
+
 func TestApplicationHealth(t *testing.T) {
 	now := time.Date(2026, time.August, 18, 18, 0, 0, 0, time.UTC)
 	recent := now.Add(-45 * time.Second)

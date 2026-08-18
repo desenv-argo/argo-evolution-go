@@ -170,6 +170,29 @@ type MessageLifecycleEvent struct {
 	CreatedAt         time.Time `json:"created_at" gorm:"autoCreateTime"`
 }
 
+// MessageMedia stores a captured attachment independently from the upstream
+// message model. The binary is served only through the authenticated Argo API.
+type MessageMedia struct {
+	ID                string    `json:"id" gorm:"type:uuid;primaryKey"`
+	InstanceID        string    `json:"instance_id" gorm:"type:uuid;uniqueIndex:idx_argo_media_instance_message,priority:1;not null"`
+	ProviderMessageID string    `json:"provider_message_id" gorm:"size:128;uniqueIndex:idx_argo_media_instance_message,priority:2;not null"`
+	FileName          string    `json:"file_name" gorm:"size:255"`
+	MimeType          string    `json:"mime_type" gorm:"size:160;not null"`
+	SizeBytes         int64     `json:"size_bytes" gorm:"not null"`
+	Content           []byte    `json:"-" gorm:"type:bytea;not null"`
+	CreatedAt         time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt         time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (MessageMedia) TableName() string { return "argo_message_media" }
+
+func (m *MessageMedia) BeforeCreate(tx *gorm.DB) error {
+	if m.ID == "" {
+		m.ID = uuid.NewString()
+	}
+	return nil
+}
+
 func (MessageLifecycleEvent) TableName() string { return "argo_message_lifecycle_events" }
 
 func (e *MessageLifecycleEvent) BeforeCreate(tx *gorm.DB) error {

@@ -26,6 +26,8 @@ type Repository interface {
 	LifecycleEvents(ctx context.Context, filters argo_model.LifecycleFilters) ([]argo_model.MessageLifecycleEvent, error)
 	ReconcilePendingAged(ctx context.Context, cutoff time.Time) (int64, error)
 	BackfillLifecycle(ctx context.Context, options argo_model.LifecycleBackfillOptions) (*argo_model.LifecycleBackfillReport, error)
+	SaveMessageMedia(ctx context.Context, media *argo_model.MessageMedia) error
+	GetMessageMedia(ctx context.Context, instanceID, providerMessageID string) (*argo_model.MessageMedia, error)
 }
 
 func (r *repository) RecordHeartbeat(ctx context.Context, heartbeat *argo_model.IntegrationHeartbeat) error {

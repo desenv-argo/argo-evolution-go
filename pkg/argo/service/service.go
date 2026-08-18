@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"mime"
 	"net/url"
 	"os"
 	"regexp"
@@ -24,6 +25,7 @@ import (
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,98}[a-z0-9]$`)
 
 var ErrInvalidApplicationCredential = errors.New("invalid application credential")
+var ErrMessageMediaTooLarge = errors.New("message media exceeds capture limit")
 
 type ApplicationInput struct {
 	Slug                     string `json:"slug"`
@@ -79,12 +81,57 @@ type Service interface {
 	ListLifecycleEvents(ctx context.Context, filters argo_model.LifecycleFilters) ([]argo_model.MessageLifecycleEvent, error)
 	LifecycleSummary(ctx context.Context, filters argo_model.LifecycleFilters) (*argo_model.LifecycleSummary, error)
 	BackfillLifecycle(ctx context.Context, input LifecycleBackfillInput) (*argo_model.LifecycleBackfillReport, error)
+	StoreMessageMedia(ctx context.Context, instanceID, providerMessageID, fileName, mimeType string, content []byte) error
+	GetMessageMedia(ctx context.Context, instanceID, providerMessageID string) (*argo_model.MessageMedia, error)
 }
 
 type service struct {
-	repository argo_repository.Repository
-	now        func() time.Time
-	pendingAge time.Duration
+	repository    argo_repository.Repository
+	now           func() time.Time
+	pendingAge    time.Duration
+	mediaMaxBytes int64
+}
+
+func (s *service) StoreMessageMedia(ctx context.Context, instanceID, providerMessageID, fileName, mimeType string, content []byte) error {
+	instanceID = strings.TrimSpace(instanceID)
+	providerMessageID = strings.TrimSpace(providerMessageID)
+	if instanceID == "" || providerMessageID == "" || len(content) == 0 {
+		return errors.New("instance, message and media content are required")
+	}
+	if int64(len(content)) > s.mediaMaxBytes {
+		return ErrMessageMediaTooLarge
+	}
+	mimeType = normalizeMediaType(mimeType)
+	fileName = sanitizeMediaFileName(fileName, providerMessageID)
+	return s.repository.SaveMessageMedia(ctx, &argo_model.MessageMedia{
+		InstanceID: instanceID, ProviderMessageID: providerMessageID,
+		FileName: fileName, MimeType: strings.TrimSpace(mimeType),
+		SizeBytes: int64(len(content)), Content: append([]byte(nil), content...),
+	})
+}
+
+func normalizeMediaType(value string) string {
+	mediaType, _, err := mime.ParseMediaType(strings.TrimSpace(value))
+	if err != nil || mediaType == "" {
+		return "application/octet-stream"
+	}
+	return mediaType
+}
+
+func (s *service) GetMessageMedia(ctx context.Context, instanceID, providerMessageID string) (*argo_model.MessageMedia, error) {
+	if strings.TrimSpace(instanceID) == "" || strings.TrimSpace(providerMessageID) == "" {
+		return nil, errors.New("instanceId and messageId are required")
+	}
+	return s.repository.GetMessageMedia(ctx, strings.TrimSpace(instanceID), strings.TrimSpace(providerMessageID))
+}
+
+func sanitizeMediaFileName(value, fallback string) string {
+	value = strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(value, "\\", "_"), "/", "_"))
+	value = cleanValue(value, 255)
+	if value == "" {
+		return cleanValue(fallback, 128)
+	}
+	return value
 }
 
 func (s *service) CreateApplication(ctx context.Context, input ApplicationInput) (*ApplicationCredential, error) {
@@ -561,5 +608,23 @@ func hashCredential(value string) string {
 }
 
 func NewService(repository argo_repository.Repository) Service {
-	return &service{repository: repository, now: time.Now, pendingAge: pendingAgeFromEnvironment()}
+	return &service{
+		repository:    repository,
+		now:           time.Now,
+		pendingAge:    pendingAgeFromEnvironment(),
+		mediaMaxBytes: messageMediaMaxBytesFromEnvironment(),
+	}
+}
+
+func messageMediaMaxBytesFromEnvironment() int64 {
+	const defaultLimit = int64(25 * 1024 * 1024)
+	value := strings.TrimSpace(os.Getenv("ARGO_MESSAGE_MEDIA_MAX_BYTES"))
+	if value == "" {
+		return defaultLimit
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed < 1024 || parsed > 100*1024*1024 {
+		return defaultLimit
+	}
+	return parsed
 }

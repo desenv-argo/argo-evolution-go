@@ -300,6 +300,7 @@ func migrate(db *gorm.DB) {
 		&argo_model.MessageAttempt{},
 		&argo_model.IntegrationHeartbeat{},
 		&argo_model.MessageLifecycleEvent{},
+		&argo_model.MessageMedia{},
 	); err != nil {
 		log.Fatal(err)
 	}
