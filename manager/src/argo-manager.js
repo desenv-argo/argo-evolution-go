@@ -103,11 +103,12 @@ const styles = String.raw`
   .legend { display: flex; gap: 16px; color: var(--argo-muted); font-size: 11px; }
   .legend span::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 999px; background: var(--legend); }
   .instance-list { display: grid; gap: 9px; }
-  .instance-row { display: grid; grid-template-columns: 9px minmax(0,1fr) auto; align-items: center; gap: 11px; padding: 11px 12px; border: 1px solid rgba(148,163,184,.1); border-radius: 12px; background: rgba(9,20,38,.6); }
+  .instance-row { display: grid; grid-template-columns: 9px minmax(0,1fr) auto auto; align-items: center; gap: 11px; padding: 11px 12px; border: 1px solid rgba(148,163,184,.1); border-radius: 12px; background: rgba(9,20,38,.6); }
   .status-dot { width: 8px; height: 8px; border-radius: 999px; background: var(--argo-red); box-shadow: 0 0 12px currentColor; }
   .status-dot.connected { background: var(--argo-green); }
   .instance-name { overflow: hidden; font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
   .instance-owner, .instance-state { color: var(--argo-muted); font-size: 11px; }
+  .instance-resume { min-height: 30px; padding: 0 9px; border-radius: 8px; font-size: 11px; }
   .empty { min-height: 160px; justify-content: center; flex-direction: column; gap: 8px; color: var(--argo-muted); text-align: center; }
   .empty strong { color: var(--argo-text); }
   .skeleton { position: relative; overflow: hidden; background: rgba(148,163,184,.09); color: transparent; border-radius: 8px; }
@@ -433,8 +434,31 @@ class ArgoDashboard extends ArgoBaseElement {
       const info = element("div");
       info.append(element("div", "instance-name", instance.name), element("div", "instance-owner", instance.jid ? instance.jid.split("@")[0] : "Sem número vinculado"));
       row.append(info, element("span", `instance-state ${instance.connected ? "good" : "bad"}`, instance.connected ? "Conectada" : "Offline"));
+      if (!instance.connected && instance.jid) {
+        const resume = element("button", "button instance-resume", "Reconectar");
+        resume.type = "button";
+        resume.addEventListener("click", () => this.resumeInstance(instance, resume));
+        row.append(resume);
+      } else {
+        row.append(element("span"));
+      }
       return row;
     }));
+  }
+
+  async resumeInstance(instance, button) {
+    button.disabled = true;
+    button.textContent = "Reconectando...";
+    this.setError("");
+    try {
+      await request(`/instance/resume/${encodeURIComponent(instance.id)}`, {}, undefined, { method: "POST" });
+      await new Promise((resolve) => window.setTimeout(resolve, 4000));
+      await this.load();
+    } catch (error) {
+      this.setError(error.message);
+      button.disabled = false;
+      button.textContent = "Reconectar";
+    }
   }
 }
 

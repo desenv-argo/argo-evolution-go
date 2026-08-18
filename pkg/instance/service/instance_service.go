@@ -29,6 +29,7 @@ type InstanceService interface {
 	Create(data *CreateStruct) (*instance_model.Instance, error)
 	Connect(data *ConnectStruct, instance *instance_model.Instance) (*instance_model.Instance, string, string, error)
 	Reconnect(instance *instance_model.Instance) error
+	Resume(instanceId string) error
 	Disconnect(instance *instance_model.Instance) (*instance_model.Instance, error)
 	Logout(instance *instance_model.Instance) (*instance_model.Instance, error)
 	Status(instance *instance_model.Instance) (*StatusStruct, error)
@@ -306,6 +307,32 @@ func (i instances) Reconnect(instance *instance_model.Instance) error {
 	}
 
 	return i.whatsmeowService.ReconnectClient(instance.Id)
+}
+
+// Resume restores a persisted WhatsApp session in the current process. It is
+// intentionally keyed by instance ID and protected by the admin route so the
+// Manager can recover a runtime that disappeared after a container swap
+// without requiring the instance token or a new QR code.
+func (i instances) Resume(instanceId string) error {
+	instance, err := i.instanceRepository.GetInstanceByID(instanceId)
+	if err != nil {
+		return err
+	}
+
+	client := i.clientPointer[instanceId]
+	if client != nil && client.IsConnected() && client.IsLoggedIn() {
+		return nil
+	}
+
+	if instance.Jid == "" {
+		return errors.New("instance has no linked WhatsApp session; pair it before reconnecting")
+	}
+
+	if client != nil {
+		return i.whatsmeowService.ReconnectClient(instanceId)
+	}
+
+	return i.whatsmeowService.StartInstance(instanceId)
 }
 
 func (i instances) Disconnect(instance *instance_model.Instance) (*instance_model.Instance, error) {

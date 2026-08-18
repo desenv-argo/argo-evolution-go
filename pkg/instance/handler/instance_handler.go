@@ -16,6 +16,7 @@ type InstanceHandler interface {
 	Create(ctx *gin.Context)
 	Connect(ctx *gin.Context)
 	Reconnect(ctx *gin.Context)
+	Resume(ctx *gin.Context)
 	Disconnect(ctx *gin.Context)
 	Logout(ctx *gin.Context)
 	Delete(ctx *gin.Context)
@@ -175,6 +176,29 @@ func (i *instanceHandler) Reconnect(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "success"})
+}
+
+// Resume restores a linked instance in the current runtime.
+// @Summary Resume instance
+// @Description Restores an existing linked WhatsApp session after a process restart
+// @Tags Instance
+// @Produce json
+// @Param instanceId path string true "Instance Id"
+// @Success 200 {object} gin.H "Instance resume started"
+// @Router /instance/resume/{instanceId} [post]
+func (i *instanceHandler) Resume(ctx *gin.Context) {
+	instanceId := ctx.Param("instanceId")
+	if instanceId == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "instanceId is required"})
+		return
+	}
+
+	if err := i.instanceService.Resume(instanceId); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "instance resume started"})
 }
 
 // Disconnect from instance
