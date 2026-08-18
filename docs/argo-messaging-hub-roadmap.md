@@ -1,0 +1,115 @@
+# Argo Messaging Hub — roadmap de evolução
+
+## Objetivo
+
+Evoluir o fork do Evolution Go para uma plataforma de mensageria observável, capaz de atender ERP, Athlas e outros projetos sem acoplar as customizações Argo ao núcleo do upstream.
+
+O Evolution Go permanece responsável pelo transporte WhatsApp. Os módulos sob `pkg/argo` formam o plano de controle responsável por identidade das aplicações, rastreabilidade, métricas, saúde, confiabilidade de webhooks e insights.
+
+## Princípios de compatibilidade
+
+1. Funcionalidades Argo devem ser aditivas e residir em `pkg/argo` sempre que possível.
+2. APIs próprias usam o prefixo versionado `/argo/v1`.
+3. Tabelas próprias usam nomes e modelos Argo, sem alterar o significado dos modelos upstream.
+4. Headers Argo são opcionais durante a migração; consumidores antigos continuam funcionando.
+5. Segredos são armazenados somente como hash e nunca retornados após criação ou rotação.
+6. Atualizações upstream devem ocorrer por versão fixada e PR de sincronização, nunca pela tag `latest` diretamente em produção.
+7. Toda integração nova deve possuir testes de contrato e correlation ID ponta a ponta.
+
+## Fase 1 — identidade e rastreabilidade
+
+Status: em implementação.
+
+- catálogo administrativo de aplicações;
+- credencial própria por aplicação, retornada apenas na criação ou rotação;
+- identificação declarada por `X-Argo-Application-Id`;
+- autenticação da identidade por `X-Argo-Application-Key`;
+- propagação ou criação de `X-Correlation-Id`;
+- captura de `Idempotency-Key`;
+- persistência de todas as tentativas em `/send/*`, inclusive 4xx e 5xx;
+- taxonomia inicial de erros;
+- resumo operacional e consulta de tentativas por aplicação, instância e período;
+- compatibilidade com consumidores legados, identificados como `legacy/unknown`.
+
+### Contrato do consumidor
+
+```http
+apikey: <token-da-instancia>
+X-Argo-Application-Id: argo-erp
+X-Argo-Application-Key: <credencial-da-aplicacao>
+X-Correlation-Id: <uuid-da-operacao>
+Idempotency-Key: <uuid-do-comando>
+```
+
+O token da instância continua autorizando a operação no Evolution. A credencial Argo autentica qual aplicação está originando a chamada. Nesta fase, uma identidade ausente ou inválida é registrada como não verificada, mas não bloqueia a operação.
+
+## Fase 2 — saúde das integrações
+
+- health checks controlados pelo plano de controle;
+- heartbeat assinado para aplicações que não expõem endpoint consultável;
+- estados separados para aplicação, autenticação, instância e fluxo de eventos;
+- histórico de disponibilidade e latência;
+- alertas por falhas consecutivas, ausência de atividade e degradação;
+- proteção contra SSRF por allowlist de hosts e redes permitidas.
+
+## Fase 3 — entrega confiável de eventos
+
+- outbox persistente para webhooks;
+- worker com timeout, backoff exponencial e jitter;
+- fila de mensagens mortas;
+- replay manual e automático;
+- idempotência por evento;
+- métricas de backlog, atraso, sucesso e falha por destino;
+- retenção e mascaramento de payloads sensíveis.
+
+## Fase 4 — ciclo completo da mensagem
+
+- transições `received`, `validated`, `accepted`, `sent`, `delivered`, `read`;
+- estados de falha conhecidos e `pending_aged` para ausência de recibo após o limite;
+- histórico de transições sem sobrescrever evidências anteriores;
+- tempos P50, P95 e P99 para envio, entrega e leitura;
+- funil por aplicação, instância, tipo de mensagem e período;
+- reconciliação entre tentativas, mensagens e receipts.
+
+## Fase 5 — operação e decisão
+
+- dashboard por aplicação e ambiente;
+- consumo por aplicação e instância;
+- concentração de erros;
+- disponibilidade e reconexões por instância;
+- SLA de primeira resposta e conversas aguardando atendimento;
+- tendências, anomalias e capacidade;
+- auditoria de credenciais, alterações e replay de eventos.
+
+## Fase 6 — insights
+
+- classificação de assunto e intenção;
+- sentimento e sinais de insatisfação;
+- objeções e pedidos recorrentes;
+- resumo de conversa;
+- resultados derivados versionados e reprocessáveis;
+- retenção, mascaramento, exclusão por contato e controle de acesso antes da liberação ampla.
+
+## Estratégia de atualização upstream
+
+- adicionar `evolution-foundation/evolution-go` como remote `upstream` no processo de manutenção;
+- executar verificação semanal de novas releases;
+- abrir PR automático de sincronização com relatório de conflitos;
+- manter uma lista explícita dos poucos arquivos upstream tocados pelas extensões;
+- migrar o painel Argo para uma rota ou SPA própria, evitando depender do bundle compilado do Manager;
+- executar E2E de conexão, envio, receipt, webhook e analytics antes de qualquer merge de upstream;
+- contribuir correções genéricas de QR, reconexão e pool de banco de volta ao upstream para reduzir o patch local.
+
+## Métricas prioritárias
+
+- taxa de aceitação: aceitas / tentativas;
+- taxa de envio: enviadas / aceitas;
+- taxa de entrega: entregues / enviadas elegíveis;
+- taxa de leitura: lidas / entregues;
+- pendentes envelhecidas após a janela configurada;
+- erros por aplicação, instância, endpoint e categoria;
+- latência média e percentis;
+- identidades não verificadas;
+- disponibilidade de aplicação, integração e instância;
+- sucesso, atraso e backlog de webhooks.
+
