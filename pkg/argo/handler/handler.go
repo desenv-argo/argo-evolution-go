@@ -22,6 +22,8 @@ type Handler interface {
 	Heartbeat(ctx *gin.Context)
 	ListHeartbeats(ctx *gin.Context)
 	HealthSummary(ctx *gin.Context)
+	ListLifecycleEvents(ctx *gin.Context)
+	LifecycleSummary(ctx *gin.Context)
 }
 
 func (h *handler) Heartbeat(ctx *gin.Context) {

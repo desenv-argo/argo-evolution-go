@@ -56,6 +56,24 @@ const replacements = [
     target:
       'm.jsx(jn,{path:"messages",element:m.jsx(pL,{})}),m.jsx(jn,{path:"integrations",element:m.jsx(ArgoIntegrationsPage,{})}),m.jsx(jn,{path:"events",element:m.jsx(gL,{})})',
   },
+  {
+    name: "message lifecycle navigation",
+    marker: '{to:"/manager/lifecycle",label:"Ciclo de mensagens",icon:HR}',
+    source: '{to:"/manager/integrations",label:"Integrações",icon:mA},{to:"/manager/messages",label:"Conversas",icon:HR}',
+    target: '{to:"/manager/integrations",label:"Integrações",icon:mA},{to:"/manager/lifecycle",label:"Ciclo de mensagens",icon:HR},{to:"/manager/messages",label:"Conversas",icon:HR}',
+  },
+  {
+    name: "message lifecycle page",
+    marker: 'function ArgoLifecyclePage(){return m.jsx("argo-message-lifecycle",{})}',
+    source: 'function ArgoIntegrationsPage(){return m.jsx("argo-integrations",{})}function gL()',
+    target: 'function ArgoIntegrationsPage(){return m.jsx("argo-integrations",{})}function ArgoLifecyclePage(){return m.jsx("argo-message-lifecycle",{})}function gL()',
+  },
+  {
+    name: "message lifecycle route",
+    marker: 'path:"lifecycle",element:m.jsx(ArgoLifecyclePage,{})',
+    source: 'm.jsx(jn,{path:"integrations",element:m.jsx(ArgoIntegrationsPage,{})}),m.jsx(jn,{path:"events",element:m.jsx(gL,{})})',
+    target: 'm.jsx(jn,{path:"integrations",element:m.jsx(ArgoIntegrationsPage,{})}),m.jsx(jn,{path:"lifecycle",element:m.jsx(ArgoLifecyclePage,{})}),m.jsx(jn,{path:"events",element:m.jsx(gL,{})})',
+  },
 ];
 
 for (const replacement of replacements) {

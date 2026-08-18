@@ -10,7 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -64,11 +67,15 @@ type Service interface {
 	RecordHeartbeat(ctx context.Context, slug, credential string, input HeartbeatInput) (*argo_model.IntegrationHeartbeat, error)
 	ListHeartbeats(ctx context.Context, filters argo_model.HeartbeatFilters) ([]argo_model.IntegrationHeartbeat, error)
 	HealthSummary(ctx context.Context, filters argo_model.HeartbeatFilters) (*argo_model.HealthSummary, error)
+	RecordReceipt(ctx context.Context, instanceID string, providerMessageIDs []string, state string, occurredAt time.Time) error
+	ListLifecycleEvents(ctx context.Context, filters argo_model.LifecycleFilters) ([]argo_model.MessageLifecycleEvent, error)
+	LifecycleSummary(ctx context.Context, filters argo_model.LifecycleFilters) (*argo_model.LifecycleSummary, error)
 }
 
 type service struct {
 	repository argo_repository.Repository
 	now        func() time.Time
+	pendingAge time.Duration
 }
 
 func (s *service) CreateApplication(ctx context.Context, input ApplicationInput) (*ApplicationCredential, error) {
@@ -195,6 +202,174 @@ func (s *service) ListAttempts(ctx context.Context, filters argo_model.AttemptFi
 
 func (s *service) AttemptSummary(ctx context.Context, filters argo_model.AttemptFilters) (*argo_model.AttemptSummary, error) {
 	return s.repository.AttemptSummary(ctx, filters)
+}
+
+func (s *service) RecordReceipt(ctx context.Context, instanceID string, providerMessageIDs []string, state string, occurredAt time.Time) error {
+	return s.repository.RecordReceipt(ctx, instanceID, providerMessageIDs, state, occurredAt)
+}
+
+func (s *service) reconcilePendingAged(ctx context.Context) error {
+	_, err := s.repository.ReconcilePendingAged(ctx, s.now().UTC().Add(-s.pendingAge))
+	return err
+}
+
+func (s *service) ListLifecycleEvents(ctx context.Context, filters argo_model.LifecycleFilters) ([]argo_model.MessageLifecycleEvent, error) {
+	if err := s.reconcilePendingAged(ctx); err != nil {
+		return nil, err
+	}
+	return s.repository.ListLifecycleEvents(ctx, filters)
+}
+
+func (s *service) LifecycleSummary(ctx context.Context, filters argo_model.LifecycleFilters) (*argo_model.LifecycleSummary, error) {
+	if err := s.reconcilePendingAged(ctx); err != nil {
+		return nil, err
+	}
+	events, err := s.repository.LifecycleEvents(ctx, filters)
+	if err != nil {
+		return nil, err
+	}
+	summary := summarizeLifecycle(events, filters.From, filters.To)
+	summary.PendingAgeMinutes = int64(s.pendingAge.Minutes())
+	return summary, nil
+}
+
+type lifecycleTimes struct {
+	received  *time.Time
+	sent      *time.Time
+	delivered *time.Time
+	read      *time.Time
+}
+
+func summarizeLifecycle(events []argo_model.MessageLifecycleEvent, from, to time.Time) *argo_model.LifecycleSummary {
+	summary := &argo_model.LifecycleSummary{From: from, To: to, Failures: []argo_model.LifecycleFailure{}}
+	seen := map[string]map[string]bool{}
+	times := map[string]*lifecycleTimes{}
+	failures := map[string]int64{}
+	for _, event := range events {
+		key := lifecycleMessageKey(event)
+		if seen[event.State] == nil {
+			seen[event.State] = map[string]bool{}
+		}
+		seen[event.State][key] = true
+		item := times[key]
+		if item == nil {
+			item = &lifecycleTimes{}
+			times[key] = item
+		}
+		at := event.OccurredAt
+		switch event.State {
+		case "received":
+			item.received = earliest(item.received, at)
+		case "sent":
+			item.sent = earliest(item.sent, at)
+		case "delivered":
+			item.delivered = earliest(item.delivered, at)
+		case "read":
+			item.read = earliest(item.read, at)
+		case "failed":
+			failureKey := event.FailureCategory + "\x00" + event.FailureCode
+			failures[failureKey]++
+		}
+	}
+	summary.Received = int64(len(seen["received"]))
+	summary.Validated = int64(len(seen["validated"]))
+	summary.Accepted = int64(len(seen["accepted"]))
+	summary.Sent = int64(len(seen["sent"]))
+	summary.Delivered = int64(len(seen["delivered"]))
+	summary.Read = int64(len(seen["read"]))
+	summary.Failed = int64(len(seen["failed"]))
+	summary.PendingAged = int64(len(seen["pending_aged"]))
+	summary.AcceptanceRate = rate(summary.Accepted, summary.Received)
+	summary.SendRate = rate(summary.Sent, summary.Accepted)
+	summary.DeliveryRate = rate(summary.Delivered, summary.Sent)
+	summary.ReadRate = rate(summary.Read, summary.Delivered)
+
+	var sendDurations, deliveryDurations, readDurations []float64
+	for _, item := range times {
+		if item.received != nil && item.sent != nil {
+			sendDurations = appendNonNegativeDuration(sendDurations, *item.received, *item.sent)
+		}
+		if item.sent != nil && item.delivered != nil {
+			deliveryDurations = appendNonNegativeDuration(deliveryDurations, *item.sent, *item.delivered)
+		}
+		if item.delivered != nil && item.read != nil {
+			readDurations = appendNonNegativeDuration(readDurations, *item.delivered, *item.read)
+		}
+	}
+	summary.SendLatency = latencyPercentiles(sendDurations)
+	summary.DeliveryLatency = latencyPercentiles(deliveryDurations)
+	summary.ReadLatency = latencyPercentiles(readDurations)
+	for key, count := range failures {
+		parts := strings.SplitN(key, "\x00", 2)
+		summary.Failures = append(summary.Failures, argo_model.LifecycleFailure{Category: parts[0], Code: parts[1], Count: count})
+	}
+	sort.Slice(summary.Failures, func(i, j int) bool { return summary.Failures[i].Count > summary.Failures[j].Count })
+	return summary
+}
+
+func lifecycleMessageKey(event argo_model.MessageLifecycleEvent) string {
+	if event.AttemptID != nil && *event.AttemptID != "" {
+		return "attempt:" + *event.AttemptID
+	}
+	instanceID := ""
+	if event.InstanceID != nil {
+		instanceID = *event.InstanceID
+	}
+	return "provider:" + instanceID + ":" + event.ProviderMessageID
+}
+
+func earliest(current *time.Time, candidate time.Time) *time.Time {
+	if current == nil || candidate.Before(*current) {
+		value := candidate
+		return &value
+	}
+	return current
+}
+
+func rate(numerator, denominator int64) float64 {
+	if denominator == 0 {
+		return 0
+	}
+	return float64(numerator) * 100 / float64(denominator)
+}
+
+func appendNonNegativeDuration(values []float64, start, end time.Time) []float64 {
+	if end.Before(start) {
+		return values
+	}
+	return append(values, float64(end.Sub(start).Milliseconds()))
+}
+
+func latencyPercentiles(values []float64) argo_model.LifecycleLatency {
+	if len(values) == 0 {
+		return argo_model.LifecycleLatency{}
+	}
+	sort.Float64s(values)
+	return argo_model.LifecycleLatency{
+		P50: percentile(values, .50),
+		P90: percentile(values, .90),
+		P95: percentile(values, .95),
+		P99: percentile(values, .99),
+	}
+}
+
+func percentile(values []float64, quantile float64) float64 {
+	position := quantile * float64(len(values)-1)
+	lower := int(position)
+	upper := lower + 1
+	if upper >= len(values) {
+		return values[lower]
+	}
+	weight := position - float64(lower)
+	return values[lower]*(1-weight) + values[upper]*weight
+}
+
+func pendingAgeFromEnvironment() time.Duration {
+	minutes, err := strconv.Atoi(strings.TrimSpace(os.Getenv("ARGO_MESSAGE_PENDING_AGE_MINUTES")))
+	if err != nil || minutes < 1 || minutes > 10080 {
+		minutes = 15
+	}
+	return time.Duration(minutes) * time.Minute
 }
 
 func (s *service) RecordHeartbeat(ctx context.Context, slug, credential string, input HeartbeatInput) (*argo_model.IntegrationHeartbeat, error) {
@@ -356,5 +531,5 @@ func hashCredential(value string) string {
 }
 
 func NewService(repository argo_repository.Repository) Service {
-	return &service{repository: repository, now: time.Now}
+	return &service{repository: repository, now: time.Now, pendingAge: pendingAgeFromEnvironment()}
 }
