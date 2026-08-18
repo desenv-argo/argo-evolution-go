@@ -242,7 +242,10 @@ func Load() *Config {
 
 	connectOnStartup := os.Getenv(config_env.CONNECT_ON_STARTUP)
 	if connectOnStartup == "" {
-		connectOnStartup = "false"
+		// A linked WhatsApp session must be restored whenever the container is
+		// replaced. Leaving this disabled makes every CI/CD deployment require a
+		// manual reconnect even though the device credentials are still valid.
+		connectOnStartup = "true"
 	}
 
 	osName := os.Getenv(config_env.OS_NAME)
