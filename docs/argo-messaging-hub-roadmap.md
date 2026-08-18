@@ -134,6 +134,13 @@ continuam no funil como `legacy/unknown`.
 
 ## Fase 5 — operação e decisão
 
+### Captura de conversas e anexos
+
+- mensagens recuperadas por `HistorySync` também alimentam a visão de conversas, cobrindo envios feitos por outros dispositivos e períodos offline;
+- documentos recebidos são armazenados em `argo_message_media` e servidos somente pela API administrativa;
+- o Manager exibe nome, tamanho e ações de visualização e download;
+- `ARGO_MESSAGE_MEDIA_MAX_BYTES` limita cada anexo capturado (padrão: 25 MiB; máximo: 100 MiB).
+
 - dashboard por aplicação e ambiente;
 - consumo por aplicação e instância;
 - concentração de erros;
