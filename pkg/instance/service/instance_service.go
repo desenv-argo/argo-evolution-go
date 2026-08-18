@@ -29,7 +29,8 @@ type InstanceService interface {
 	Create(data *CreateStruct) (*instance_model.Instance, error)
 	Connect(data *ConnectStruct, instance *instance_model.Instance) (*instance_model.Instance, string, string, error)
 	Reconnect(instance *instance_model.Instance) error
-	Resume(instanceId string) error
+	Resume(instanceId string) (*HealthStruct, error)
+	Health(instanceId string, probe bool) (*HealthStruct, error)
 	Disconnect(instance *instance_model.Instance) (*instance_model.Instance, error)
 	Logout(instance *instance_model.Instance) (*instance_model.Instance, error)
 	Status(instance *instance_model.Instance) (*StatusStruct, error)
@@ -88,6 +89,20 @@ type StatusStruct struct {
 	LoggedIn  bool
 	myJid     *types.JID
 	Name      string
+}
+
+type HealthStruct struct {
+	InstanceID         string `json:"instance_id"`
+	State              string `json:"state"`
+	SessionLinked      bool   `json:"session_linked"`
+	TransportConnected bool   `json:"transport_connected"`
+	LoggedIn           bool   `json:"logged_in"`
+	DatabaseConnected  bool   `json:"database_connected"`
+	ProbePerformed     bool   `json:"probe_performed"`
+	ProbeOK            bool   `json:"probe_ok"`
+	LatencyMS          int64  `json:"latency_ms,omitempty"`
+	DisconnectReason   string `json:"disconnect_reason,omitempty"`
+	Detail             string `json:"detail"`
 }
 
 type QrcodeStruct struct {
@@ -313,26 +328,115 @@ func (i instances) Reconnect(instance *instance_model.Instance) error {
 // intentionally keyed by instance ID and protected by the admin route so the
 // Manager can recover a runtime that disappeared after a container swap
 // without requiring the instance token or a new QR code.
-func (i instances) Resume(instanceId string) error {
+func (i instances) Resume(instanceId string) (*HealthStruct, error) {
 	instance, err := i.instanceRepository.GetInstanceByID(instanceId)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	client := i.clientPointer[instanceId]
 	if client != nil && client.IsConnected() && client.IsLoggedIn() {
-		return nil
+		return i.Health(instanceId, true)
 	}
 
 	if instance.Jid == "" {
-		return errors.New("instance has no linked WhatsApp session; pair it before reconnecting")
+		return nil, errors.New("instance has no linked WhatsApp session; pair it before reconnecting")
 	}
 
 	if client != nil {
-		return i.whatsmeowService.ReconnectClient(instanceId)
+		err = i.whatsmeowService.ReconnectClient(instanceId)
+	} else {
+		err = i.whatsmeowService.StartInstance(instanceId)
+	}
+	if err != nil {
+		return nil, err
 	}
 
-	return i.whatsmeowService.StartInstance(instanceId)
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		health, healthErr := i.Health(instanceId, false)
+		if healthErr != nil {
+			return nil, healthErr
+		}
+		if health.TransportConnected && health.LoggedIn {
+			return i.Health(instanceId, true)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	return i.Health(instanceId, false)
+}
+
+// Health reports the live runtime state instead of trusting the persisted
+// connected flag. With probe enabled it also performs a read-only WhatsApp
+// round trip, proving that an authenticated websocket can serve requests.
+func (i instances) Health(instanceId string, probe bool) (*HealthStruct, error) {
+	instance, err := i.instanceRepository.GetInstanceByID(instanceId)
+	if err != nil {
+		return nil, err
+	}
+
+	health := &HealthStruct{
+		InstanceID:        instance.Id,
+		SessionLinked:     strings.TrimSpace(instance.Jid) != "",
+		DatabaseConnected: instance.Connected,
+		DisconnectReason:  instance.DisconnectReason,
+	}
+
+	client := i.clientPointer[instanceId]
+	if client == nil {
+		if health.SessionLinked {
+			health.State = "linked_offline"
+			health.Detail = "Session linked, but no WhatsApp client is running"
+		} else {
+			health.State = "needs_pairing"
+			health.Detail = "No linked WhatsApp session; QR code or pairing is required"
+		}
+		return health, nil
+	}
+
+	health.TransportConnected = client.IsConnected()
+	health.LoggedIn = client.IsLoggedIn()
+	if !health.TransportConnected || !health.LoggedIn {
+		if strings.EqualFold(instance.DisconnectReason, "Reconnecting") {
+			health.State = "reconnecting"
+			health.Detail = "WhatsApp client exists and is reconnecting"
+		} else {
+			health.State = "linked_offline"
+			health.Detail = "WhatsApp client exists, but transport or login is offline"
+		}
+		return health, nil
+	}
+
+	health.State = "connected"
+	health.Detail = "WebSocket connected and session authenticated"
+	if !probe {
+		return health, nil
+	}
+
+	health.ProbePerformed = true
+	startedAt := time.Now()
+	probeCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	if client.Store.ID == nil {
+		health.State = "degraded"
+		health.Detail = "Authenticated client has no device identifier"
+		return health, nil
+	}
+
+	_, err = client.GetUserInfo(probeCtx, []types.JID{*client.Store.ID})
+	health.LatencyMS = time.Since(startedAt).Milliseconds()
+	if err != nil {
+		health.State = "degraded"
+		health.Detail = fmt.Sprintf("WhatsApp functional probe failed: %v", err)
+		return health, nil
+	}
+
+	health.ProbeOK = true
+	health.State = "operational"
+	health.Detail = "WhatsApp functional probe completed successfully"
+	return health, nil
 }
 
 func (i instances) Disconnect(instance *instance_model.Instance) (*instance_model.Instance, error) {
