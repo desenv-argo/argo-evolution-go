@@ -304,8 +304,12 @@ function periodRange(days) {
   return { from: from.toISOString(), to: to.toISOString() };
 }
 
+function conversationChatJID(conversation) {
+  return conversation.chat_jid || conversation.chat_j_id || conversation.chatJid || "";
+}
+
 function displayName(conversation) {
-  return conversation.push_name || conversation.contact || conversation.chat_jid || "Conversa";
+  return conversation.push_name || conversation.contact || conversationChatJID(conversation) || "Conversa";
 }
 
 function messageBody(message) {
@@ -1054,7 +1058,7 @@ class ArgoConversations extends ArgoBaseElement {
     }
   }
 
-  key(conversation) { return `${conversation.instance_id}:${conversation.chat_jid}`; }
+  key(conversation) { return `${conversation.instance_id}:${conversationChatJID(conversation)}`; }
 
   renderConversations() {
     const target = this.shadowRoot.querySelector("[data-conversations]");
@@ -1080,11 +1084,16 @@ class ArgoConversations extends ArgoBaseElement {
   }
 
   async selectConversation(conversation) {
+    const chatJid = conversationChatJID(conversation);
+    if (!chatJid) {
+      this.setError("A conversa nao possui um identificador WhatsApp valido. Atualize a lista e tente novamente.");
+      return;
+    }
     this.selected = conversation;
     this.messagePage = null;
     this.renderConversations();
     const header = this.shadowRoot.querySelector("[data-timeline-header]");
-    header.replaceChildren(element("p", "timeline-name", displayName(conversation)), element("p", "timeline-id", `${conversation.chat_jid} · ${conversation.instance_name}`));
+    header.replaceChildren(element("p", "timeline-name", displayName(conversation)), element("p", "timeline-id", `${chatJid} · ${conversation.instance_name}`));
     const target = this.shadowRoot.querySelector("[data-messages]");
     target.replaceChildren(element("div", "empty", "Carregando mensagens..."));
     const signal = this.disconnectController();
@@ -1092,7 +1101,7 @@ class ArgoConversations extends ArgoBaseElement {
       const page = await request("/analytics/messages", {
         ...this.filters(),
         instanceId: conversation.instance_id,
-        chatJid: conversation.chat_jid,
+        chatJid,
         limit: 100,
       }, signal);
       this.messages = (page.items || []).reverse();
@@ -1112,7 +1121,7 @@ class ArgoConversations extends ArgoBaseElement {
       const page = await request("/analytics/messages", {
         ...this.filters(),
         instanceId: this.selected.instance_id,
-        chatJid: this.selected.chat_jid,
+        chatJid: conversationChatJID(this.selected),
         before: this.messagePage.next_cursor,
         limit: 100,
       }, signal);
