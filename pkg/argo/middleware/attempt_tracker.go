@@ -177,4 +177,3 @@ func cleanHeader(value string, limit int) string {
 func NewAttemptTracker(service argo_service.Service) *AttemptTracker {
 	return &AttemptTracker{service: service}
 }
-
