@@ -28,6 +28,8 @@ type InstanceRepository interface {
 	UpdateJid(userId string, jid string) error
 	GetAllConnectedInstances() ([]*instance_model.Instance, error)
 	GetAllConnectedInstancesByClientName(clientName string) ([]*instance_model.Instance, error)
+	GetAllLinkedInstances() ([]*instance_model.Instance, error)
+	GetAllLinkedInstancesByClientName(clientName string) ([]*instance_model.Instance, error)
 	GetAll(clientName string) ([]*instance_model.Instance, error)
 	Delete(instanceId string) error
 	GetAdvancedSettings(instanceId string) (*instance_model.AdvancedSettings, error)
@@ -129,6 +131,30 @@ func (i *instanceRepository) GetAllConnectedInstances() ([]*instance_model.Insta
 func (i *instanceRepository) GetAllConnectedInstancesByClientName(clientName string) ([]*instance_model.Instance, error) {
 	var instances []*instance_model.Instance
 	err := i.db.Where("connected = ? AND client_name = ?", true, clientName).Find(&instances).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return instances, nil
+}
+
+// GetAllLinkedInstances returns every instance that still has a persisted
+// WhatsApp identity. The connected flag describes the last runtime state and
+// is deliberately not used here: a graceful application shutdown marks the
+// instance offline even though its session remains valid for the next boot.
+func (i *instanceRepository) GetAllLinkedInstances() ([]*instance_model.Instance, error) {
+	var instances []*instance_model.Instance
+	err := i.db.Where("jid IS NOT NULL AND TRIM(jid) <> ''").Find(&instances).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return instances, nil
+}
+
+func (i *instanceRepository) GetAllLinkedInstancesByClientName(clientName string) ([]*instance_model.Instance, error) {
+	var instances []*instance_model.Instance
+	err := i.db.Where("jid IS NOT NULL AND TRIM(jid) <> '' AND client_name = ?", clientName).Find(&instances).Error
 	if err != nil {
 		return nil, err
 	}

@@ -305,6 +305,32 @@ func (w whatsmeowService) ForceUpdateJid(instanceId string, number string) error
 	return nil
 }
 
+func (w whatsmeowService) connectPersistedSession(client *whatsmeow.Client, instanceID string) error {
+	const maxAttempts = 5
+	var lastErr error
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		lastErr = client.Connect()
+		if lastErr == nil {
+			w.loggerWrapper.GetLogger(instanceID).LogInfo("[%s] Persisted session restored on attempt %d/%d", instanceID, attempt, maxAttempts)
+			return nil
+		}
+
+		if strings.Contains(lastErr.Error(), "username/password authentication failed") {
+			w.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] Proxy authentication failed; retrying the persisted session without proxy", instanceID)
+			client.SetProxy(nil)
+		}
+
+		w.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] Persisted session connection attempt %d/%d failed: %v", instanceID, attempt, maxAttempts, lastErr)
+		if attempt < maxAttempts {
+			backoff := time.Duration(1<<(attempt-1)) * time.Second
+			time.Sleep(backoff)
+		}
+	}
+
+	return fmt.Errorf("failed to restore persisted session after %d attempts: %w", maxAttempts, lastErr)
+}
+
 func (w whatsmeowService) StartClient(cd *ClientData) {
 
 	w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("Starting websocket connection to Whatsapp for user '%s'", cd.Instance.Id)
@@ -519,33 +545,10 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 
 	if client.Store.ID != nil {
 		w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Already logged in with JID: %s", cd.Instance.Id, client.Store.ID.String())
-		err = client.Connect()
-		if err != nil {
-			if strings.Contains(err.Error(), "EOF") {
-				w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Erro de conexão WebSocket (EOF). Tentando reconectar em 5 segundos...", cd.Instance.Id)
-				time.Sleep(5 * time.Second)
-				err = client.Connect()
-				if err != nil {
-					w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Falha na segunda tentativa de conexão: %v", cd.Instance.Id, err)
-					return
-				}
-			} else if strings.Contains(err.Error(), "username/password authentication failed") {
-				w.loggerWrapper.GetLogger(cd.Instance.Id).LogWarn("[%s] Proxy authentication failed, attempting to connect without proxy", cd.Instance.Id)
-
-				// Desabilita o proxy
-				client.SetProxy(nil)
-
-				// Tenta conectar sem proxy
-				err = client.Connect()
-				if err != nil {
-					w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Failed to connect even without proxy: %v", cd.Instance.Id, err)
-					return
-				}
-				w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Successfully connected without proxy", cd.Instance.Id)
-			} else {
-				w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Failed to connect: %v", cd.Instance.Id, err)
-				return
-			}
+		if err = w.connectPersistedSession(client, cd.Instance.Id); err != nil {
+			w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] %v", cd.Instance.Id, err)
+			_ = w.instanceRepository.UpdateConnected(cd.Instance.Id, false, "Automatic reconnect exhausted")
+			return
 		}
 	} else {
 		// New-device pairing. We intentionally do NOT use client.GetQRChannel:
@@ -2442,32 +2445,30 @@ func (w whatsmeowService) StartInstance(instanceId string) error {
 }
 
 func (w whatsmeowService) ConnectOnStartup(clientName string) {
-	w.loggerWrapper.GetLogger(clientName).LogInfo("Connecting all instances on startup")
+	w.loggerWrapper.GetLogger(clientName).LogInfo("Restoring all linked instances on startup")
 	var instances []*instance_model.Instance
 	var err error
 
 	if clientName != "" {
-		instances, err = w.instanceRepository.GetAllConnectedInstancesByClientName(clientName)
+		instances, err = w.instanceRepository.GetAllLinkedInstancesByClientName(clientName)
 		if err != nil {
-			w.loggerWrapper.GetLogger(clientName).LogError("[%s] Error getting all connected instances: %s", clientName, err)
+			w.loggerWrapper.GetLogger(clientName).LogError("[%s] Error getting linked instances: %s", clientName, err)
 			return
 		}
 	} else {
-		instances, err = w.instanceRepository.GetAllConnectedInstances()
+		instances, err = w.instanceRepository.GetAllLinkedInstances()
 		if err != nil {
-			w.loggerWrapper.GetLogger(clientName).LogError("[%s] Error getting all connected instances: %s", clientName, err)
+			w.loggerWrapper.GetLogger(clientName).LogError("[%s] Error getting linked instances: %s", clientName, err)
 			return
 		}
 	}
 
-	w.loggerWrapper.GetLogger(clientName).LogInfo("[%s] Found %d connected instances", clientName, len(instances))
+	w.loggerWrapper.GetLogger(clientName).LogInfo("[%s] Found %d linked instances to restore", clientName, len(instances))
 
 	for _, instance := range instances {
-		w.loggerWrapper.GetLogger(clientName).LogInfo("[%s] Starting client for user '%s'", clientName, instance.Id)
-
-		err := w.StartInstance(instance.Id)
-		if err != nil {
-			w.loggerWrapper.GetLogger(clientName).LogError("[%s] Error starting client: %s", clientName, err)
+		w.loggerWrapper.GetLogger(clientName).LogInfo("[%s] Scheduling linked client '%s' for automatic restore", clientName, instance.Id)
+		if err = w.StartInstance(instance.Id); err != nil {
+			w.loggerWrapper.GetLogger(clientName).LogError("[%s] Error scheduling client '%s': %s", clientName, instance.Id, err)
 		}
 	}
 }
