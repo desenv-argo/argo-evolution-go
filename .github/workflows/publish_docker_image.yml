@@ -4,9 +4,13 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    types:
+      - closed
 
 concurrency:
-  group: publish-docker-${{ github.ref }}
+  # A merge can emit both push and pull_request events. Keep a single deploy.
+  group: publish-docker-main
   cancel-in-progress: true
 
 env:
@@ -15,6 +19,7 @@ env:
 
 jobs:
   build_deploy:
+    if: github.event_name == 'push' || github.event.pull_request.merged == true
     name: Build and Deploy
     runs-on: ubuntu-latest
     permissions:
