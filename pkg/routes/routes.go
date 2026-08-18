@@ -7,6 +7,8 @@ import (
 
 	_ "github.com/evolution-foundation/evolution-go/docs"
 	analytics_handler "github.com/evolution-foundation/evolution-go/pkg/analytics/handler"
+	argo_handler "github.com/evolution-foundation/evolution-go/pkg/argo/handler"
+	argo_middleware "github.com/evolution-foundation/evolution-go/pkg/argo/middleware"
 	call_handler "github.com/evolution-foundation/evolution-go/pkg/call/handler"
 	chat_handler "github.com/evolution-foundation/evolution-go/pkg/chat/handler"
 	community_handler "github.com/evolution-foundation/evolution-go/pkg/community/handler"
@@ -38,6 +40,8 @@ type Routes struct {
 	pollHandler             *poll_handler.PollHandler
 	serverHandler           server_handler.ServerHandler
 	analyticsHandler        analytics_handler.AnalyticsHandler
+	argoHandler             argo_handler.Handler
+	attemptTracker          *argo_middleware.AttemptTracker
 }
 
 func (r *Routes) AssignRoutes(eng *gin.Engine) {
@@ -46,8 +50,8 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, Accept, Cache-Control, X-Requested-With, apikey, ApiKey")
-		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, Accept, Cache-Control, X-Requested-With, apikey, ApiKey, X-Argo-Application-Id, X-Argo-Application-Key, X-Correlation-Id, Idempotency-Key")
+		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length, X-Correlation-Id")
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(200)
@@ -90,6 +94,19 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 		}
 	}
 
+	routes = eng.Group("/argo/v1")
+	{
+		routes.Use(r.authMiddleware.AuthAdmin)
+		{
+			routes.GET("/applications", r.argoHandler.ListApplications)
+			routes.POST("/applications", r.argoHandler.CreateApplication)
+			routes.PUT("/applications/:applicationId", r.argoHandler.UpdateApplication)
+			routes.POST("/applications/:applicationId/rotate-credential", r.argoHandler.RotateCredential)
+			routes.GET("/operations/attempts", r.argoHandler.ListAttempts)
+			routes.GET("/operations/summary", r.argoHandler.AttemptSummary)
+		}
+	}
+
 	routes = eng.Group("/instance")
 	{
 		routes.Use(r.authMiddleware.AuthAdmin)
@@ -125,7 +142,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 
 	routes = eng.Group("/send")
 	{
-		routes.Use(r.authMiddleware.Auth)
+		routes.Use(r.attemptTracker.Track(), r.authMiddleware.Auth)
 		{
 			routes.POST("/text", r.jidValidationMiddleware.ValidateNumberFieldWithFormatJid(), r.sendHandler.SendText)
 			routes.POST("/link", r.jidValidationMiddleware.ValidateNumberFieldWithFormatJid(), r.sendHandler.SendLink)
@@ -277,6 +294,8 @@ func NewRouter(
 	pollHandler *poll_handler.PollHandler,
 	serverHandler server_handler.ServerHandler,
 	analyticsHandler analytics_handler.AnalyticsHandler,
+	argoHandler argo_handler.Handler,
+	attemptTracker *argo_middleware.AttemptTracker,
 ) *Routes {
 	return &Routes{
 		authMiddleware:          authMiddleware,
@@ -294,5 +313,7 @@ func NewRouter(
 		pollHandler:             pollHandler,
 		serverHandler:           serverHandler,
 		analyticsHandler:        analyticsHandler,
+		argoHandler:             argoHandler,
+		attemptTracker:          attemptTracker,
 	}
 }
