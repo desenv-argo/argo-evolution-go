@@ -100,6 +100,7 @@ type whatsmeowService struct {
 	loggerWrapper      *logger_wrapper.LoggerManager
 	passkeyCeremony    *ceremony.Store
 	captureGate        *analytics_settings.CaptureGate
+	reconnectMu        *sync.Mutex
 }
 
 type MyClient struct {
@@ -176,11 +177,18 @@ type ProxyConfig struct {
 }
 
 func (w whatsmeowService) ReconnectClient(instanceId string) error {
+	w.reconnectMu.Lock()
+	defer w.reconnectMu.Unlock()
+
 	w.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Starting reconnection process - simulating restart", instanceId)
 
 	// Passo 1: Limpar conexão existente se houver
 	if client, exists := w.clientPointer[instanceId]; exists {
 		w.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Disconnecting existing client", instanceId)
+		if mycli, ok := w.myClientPointer[instanceId]; ok && mycli.Instance != nil {
+			mycli.Instance.DisconnectReason = "Reconnecting"
+			mycli.Instance.Connected = false
+		}
 
 		// Desconectar o cliente WebSocket
 		if client.IsConnected() {
@@ -239,7 +247,11 @@ func (w whatsmeowService) ReconnectClient(instanceId string) error {
 
 	// Passo 5: Iniciar nova instância como se fosse a primeira vez
 	w.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Starting fresh instance", instanceId)
-	return w.StartInstance(instanceId)
+	if err = w.StartInstance(instanceId); err != nil {
+		_ = w.instanceRepository.UpdateConnected(instanceId, false, "Reconnect setup failed")
+		return err
+	}
+	return nil
 }
 
 func (w whatsmeowService) ForceUpdateJid(instanceId string, number string) error {
@@ -2004,25 +2016,37 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	case *events.Disconnected:
 		doWebhook = true
 		postMap["event"] = "Disconnected"
+		reconnectAlreadyScheduled := strings.EqualFold(mycli.Instance.DisconnectReason, "Reconnecting")
 
 		// Limpar cache de userInfo para esta instância (mas não para reconexão automática)
 		mycli.userInfoCache.Delete(mycli.Instance.Token)
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] UserInfo cache cleared for token: %s", mycli.userID, mycli.Instance.Token)
 
-		mycli.Instance.DisconnectReason = "Disconnected emitted because the websocket is closed by the server."
+		if reconnectAlreadyScheduled {
+			mycli.Instance.DisconnectReason = "Reconnecting"
+		} else {
+			mycli.Instance.DisconnectReason = "Disconnected emitted because the websocket is closed by the server."
+		}
 		mycli.Instance.Connected = false
 		err := mycli.instanceRepository.UpdateConnected(mycli.Instance.Id, mycli.Instance.Connected, mycli.Instance.DisconnectReason)
 		if err != nil {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Error updating instance: %s", mycli.Instance.Id, err)
 		}
 
-		// Trigger instance restart via websocket-capable service (non-blocking)
-		go func(instanceID string) {
-			mycli.loggerWrapper.GetLogger(instanceID).LogInfo("[%s] Disconnected detected, restarting instance", instanceID)
-			if err := mycli.service.ReconnectClient(instanceID); err != nil {
-				mycli.loggerWrapper.GetLogger(instanceID).LogError("[%s] Failed to restart instance: %v", instanceID, err)
-			}
-		}(mycli.userID)
+		// Trigger a restart only when another lifecycle path has not already
+		// scheduled it. ReconnectClient deliberately disconnects the old socket,
+		// which also emits Disconnected; starting twice would replace the fresh
+		// runtime created by the first attempt.
+		if reconnectAlreadyScheduled {
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Disconnected belongs to an active reconnect; duplicate restart suppressed", mycli.userID)
+		} else {
+			go func(instanceID string) {
+				mycli.loggerWrapper.GetLogger(instanceID).LogInfo("[%s] Disconnected detected, restarting instance", instanceID)
+				if err := mycli.service.ReconnectClient(instanceID); err != nil {
+					mycli.loggerWrapper.GetLogger(instanceID).LogError("[%s] Failed to restart instance: %v", instanceID, err)
+				}
+			}(mycli.userID)
+		}
 	case *events.LabelEdit:
 		doWebhook = true
 		postMap["event"] = "LabelEdit"
@@ -2445,7 +2469,17 @@ func (w whatsmeowService) StartInstance(instanceId string) error {
 }
 
 func (w whatsmeowService) ConnectOnStartup(clientName string) {
-	w.loggerWrapper.GetLogger(clientName).LogInfo("Restoring all linked instances on startup")
+	w.loggerWrapper.GetLogger(clientName).LogInfo("Starting linked-session reconciliation supervisor")
+	w.reconcileLinkedSessions(clientName)
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		w.reconcileLinkedSessions(clientName)
+	}
+}
+
+func (w whatsmeowService) reconcileLinkedSessions(clientName string) {
 	var instances []*instance_model.Instance
 	var err error
 
@@ -2455,6 +2489,14 @@ func (w whatsmeowService) ConnectOnStartup(clientName string) {
 			w.loggerWrapper.GetLogger(clientName).LogError("[%s] Error getting linked instances: %s", clientName, err)
 			return
 		}
+		if len(instances) == 0 {
+			w.loggerWrapper.GetLogger(clientName).LogWarn("[%s] No linked session matched CLIENT_NAME; checking all restorable sessions", clientName)
+			instances, err = w.instanceRepository.GetAllLinkedInstances()
+			if err != nil {
+				w.loggerWrapper.GetLogger(clientName).LogError("[%s] Error getting fallback linked instances: %s", clientName, err)
+				return
+			}
+		}
 	} else {
 		instances, err = w.instanceRepository.GetAllLinkedInstances()
 		if err != nil {
@@ -2463,12 +2505,26 @@ func (w whatsmeowService) ConnectOnStartup(clientName string) {
 		}
 	}
 
-	w.loggerWrapper.GetLogger(clientName).LogInfo("[%s] Found %d linked instances to restore", clientName, len(instances))
+	w.loggerWrapper.GetLogger(clientName).LogInfo("[%s] Reconciling %d linked instances", clientName, len(instances))
 
 	for _, instance := range instances {
-		w.loggerWrapper.GetLogger(clientName).LogInfo("[%s] Scheduling linked client '%s' for automatic restore", clientName, instance.Id)
-		if err = w.StartInstance(instance.Id); err != nil {
-			w.loggerWrapper.GetLogger(clientName).LogError("[%s] Error scheduling client '%s': %s", clientName, instance.Id, err)
+		client := w.clientPointer[instance.Id]
+		if client != nil && client.IsConnected() && client.IsLoggedIn() {
+			if !instance.Connected || instance.DisconnectReason != "" {
+				_ = w.instanceRepository.UpdateConnected(instance.Id, true, "")
+			}
+			continue
+		}
+
+		if client == nil {
+			w.loggerWrapper.GetLogger(clientName).LogInfo("[%s] Runtime missing for linked client '%s'; starting it", clientName, instance.Id)
+			err = w.StartInstance(instance.Id)
+		} else {
+			w.loggerWrapper.GetLogger(clientName).LogWarn("[%s] Linked client '%s' is offline; forcing a serialized reconnect", clientName, instance.Id)
+			err = w.ReconnectClient(instance.Id)
+		}
+		if err != nil {
+			w.loggerWrapper.GetLogger(clientName).LogError("[%s] Error reconciling client '%s': %s", clientName, instance.Id, err)
 		}
 	}
 }
@@ -2866,6 +2922,7 @@ func NewWhatsmeowService(
 		loggerWrapper:      loggerWrapper,
 		passkeyCeremony:    ceremony.NewStore(),
 		captureGate:        captureGate,
+		reconnectMu:        &sync.Mutex{},
 	}
 }
 
