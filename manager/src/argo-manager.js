@@ -125,6 +125,57 @@ const styles = String.raw`
   @keyframes shimmer { to { transform: translateX(100%); } }
   .error { margin-bottom: 14px; border: 1px solid rgba(255,93,115,.3); border-radius: 8px; background: rgba(255,93,115,.08); color: #ffb4bf; padding: 10px 12px; font-size: 12px; }
 
+  .integration-page { padding-bottom: 20px; }
+  .integration-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .integration-grid { display: grid; grid-template-columns: minmax(330px, .72fr) minmax(0, 1.7fr); gap: 14px; align-items: start; }
+  .application-list { display: grid; gap: 8px; }
+  .application-row { display: grid; gap: 9px; border: 1px solid var(--argo-border); border-radius: 9px; background: #0d110e; padding: 11px 12px; }
+  .application-row:hover { border-color: rgba(0,229,155,.2); }
+  .application-top, .application-actions, .status-line, .operations-toolbar, .pagination, .credential-actions { display: flex; align-items: center; }
+  .application-top { justify-content: space-between; gap: 12px; }
+  .application-title { min-width: 0; }
+  .application-name { overflow: hidden; font-size: 13px; font-weight: 760; text-overflow: ellipsis; white-space: nowrap; }
+  .application-slug { margin-top: 2px; color: var(--argo-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
+  .application-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 12px; }
+  .meta-label { color: #69746d; font-size: 8px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
+  .meta-value { display: block; overflow: hidden; margin-top: 2px; color: #cbd4ce; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+  .application-actions { justify-content: flex-end; gap: 6px; border-top: 1px solid rgba(255,255,255,.055); padding-top: 8px; }
+  .status-line { gap: 6px; color: var(--argo-muted); font-size: 10px; }
+  .status-pill { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--argo-border); border-radius: 999px; background: rgba(148,163,184,.055); padding: 3px 7px; color: var(--argo-muted); font-size: 9px; font-weight: 740; }
+  .status-pill::before { content: ""; width: 5px; height: 5px; border-radius: 999px; background: currentColor; }
+  .status-pill.active { border-color: rgba(0,229,155,.2); background: rgba(0,229,155,.07); color: #57ddb0; }
+  .status-pill.inactive { border-color: rgba(255,93,115,.2); background: rgba(255,93,115,.07); color: #ff8293; }
+  .operations-toolbar { flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 11px 14px; border-bottom: 1px solid var(--argo-border); }
+  .operation-filters { display: flex; flex-wrap: wrap; gap: 7px; }
+  .operation-filters select { min-width: 120px; }
+  .table-wrap { overflow: auto; }
+  .operations-table { width: 100%; border-collapse: collapse; font-size: 10px; }
+  .operations-table th { position: sticky; z-index: 1; top: 0; background: #101411; color: #77827b; padding: 8px 10px; font-size: 8px; font-weight: 800; letter-spacing: .055em; text-align: left; text-transform: uppercase; white-space: nowrap; }
+  .operations-table td { max-width: 230px; border-top: 1px solid rgba(255,255,255,.055); padding: 9px 10px; color: #c7d0ca; vertical-align: middle; }
+  .operations-table tbody tr:hover { background: rgba(0,229,155,.025); }
+  .mono { overflow: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+  .operation-error { color: #ff8293; font-weight: 700; }
+  .operation-ok { color: #57ddb0; font-weight: 700; }
+  .operation-muted { color: var(--argo-muted); }
+  .error-breakdown { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 12px; }
+  .error-token { border: 1px solid rgba(255,93,115,.15); border-radius: 6px; background: rgba(255,93,115,.055); color: #dca6ae; padding: 5px 7px; font-size: 9px; }
+  .pagination { justify-content: space-between; gap: 12px; border-top: 1px solid var(--argo-border); padding: 9px 14px; color: var(--argo-muted); font-size: 9px; }
+  .dialog-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.68); padding: 20px; backdrop-filter: blur(3px); }
+  .dialog-backdrop[hidden] { display: none; }
+  .dialog { width: min(560px, 100%); max-height: min(760px, calc(100vh - 40px)); overflow: auto; border: 1px solid var(--argo-border-strong); border-radius: 11px; background: #101411; box-shadow: 0 24px 80px rgba(0,0,0,.48); }
+  .dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--argo-border); padding: 14px 16px; }
+  .dialog-body { padding: 16px; }
+  .dialog-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .dialog-form .wide { grid-column: 1 / -1; }
+  .dialog-form input, .dialog-form select { width: 100%; }
+  .dialog-footer { display: flex; justify-content: flex-end; gap: 7px; border-top: 1px solid var(--argo-border); padding: 11px 16px; }
+  .checkbox-field { display: flex; align-items: center; gap: 8px; color: #cbd4ce; font-size: 11px; }
+  .checkbox-field input { width: 14px; min-height: auto; accent-color: var(--argo-green); }
+  .credential-box { border: 1px solid rgba(0,229,155,.2); border-radius: 8px; background: rgba(0,229,155,.06); padding: 12px; }
+  .credential-value { display: block; overflow-wrap: anywhere; color: #aaf3d8; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; line-height: 1.5; }
+  .credential-warning { margin: 0 0 12px; color: #d4c098; font-size: 11px; line-height: 1.5; }
+  .credential-actions { justify-content: flex-end; gap: 7px; margin-top: 12px; }
+
   .conversation-page { padding-bottom: 18px; }
   .conversation-layout { display: grid; grid-template-columns: minmax(285px, 360px) minmax(0, 1fr); min-height: 650px; max-height: calc(100vh - 230px); }
   .conversation-sidebar { display: flex; min-width: 0; flex-direction: column; border-right: 1px solid var(--argo-border); }
@@ -156,12 +207,16 @@ const styles = String.raw`
   @media (max-width: 1120px) {
     .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .dashboard-grid { grid-template-columns: 1fr; }
+    .integration-grid { grid-template-columns: 1fr; }
   }
   @media (max-width: 820px) {
     .page { padding: 18px; }
     .header { align-items: flex-start; flex-direction: column; }
     .toolbar { justify-content: flex-start; }
     .metrics { grid-template-columns: 1fr; }
+    .integration-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dialog-form { grid-template-columns: 1fr; }
+    .dialog-form .wide { grid-column: auto; }
     .conversation-layout { grid-template-columns: 1fr; max-height: none; }
     .conversation-sidebar { max-height: 480px; border-right: 0; border-bottom: 1px solid var(--argo-border); }
     .timeline { min-height: 600px; }
@@ -178,6 +233,20 @@ const dateTimeFormatter = new Intl.DateTimeFormat("pt-BR", {
   hour: "2-digit",
   minute: "2-digit",
 });
+
+const relativeFormatter = new Intl.RelativeTimeFormat("pt-BR", { numeric: "auto" });
+
+function relativeTime(value) {
+  if (!value) return "Nunca";
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return "Nunca";
+  const seconds = Math.round((timestamp - Date.now()) / 1000);
+  const ranges = [[86400, "day"], [3600, "hour"], [60, "minute"]];
+  for (const [size, unit] of ranges) {
+    if (Math.abs(seconds) >= size) return relativeFormatter.format(Math.round(seconds / size), unit);
+  }
+  return relativeFormatter.format(seconds, "second");
+}
 
 function authConfig() {
   const fallback = { apiUrl: window.location.origin, apiKey: "" };
@@ -524,6 +593,348 @@ class ArgoDashboard extends ArgoBaseElement {
   }
 }
 
+class ArgoIntegrations extends ArgoBaseElement {
+  connectedCallback() {
+    this.applications = [];
+    this.attempts = [];
+    this.summary = null;
+    this.editing = null;
+    this.render();
+    this.load();
+  }
+
+  render() {
+    this.shadowRoot.innerHTML = `
+      <style>${styles}</style>
+      <main class="page integration-page">
+        <header class="header">
+          <div class="brand"><img src="/assets/argo-brand.png" alt="Argo" /><div><p class="eyebrow">Ecossistema Argo</p><h1>Integrações</h1><p class="subtitle">Identidade, atividade e rastreabilidade das aplicações que consomem o canal.</p></div></div>
+          <div class="toolbar"><button class="button" data-refresh type="button">Atualizar</button><button class="button primary" data-create type="button">Nova integração</button></div>
+        </header>
+        <div class="error" data-error hidden></div>
+        <section class="metrics integration-summary" data-summary></section>
+        <section class="integration-grid">
+          <article class="panel">
+            <div class="panel-header"><div><h2 class="panel-title">Aplicações</h2><p class="panel-subtitle">Sistemas autorizados a identificar suas operações</p></div><span class="status-pill" data-app-count>0</span></div>
+            <div class="panel-body"><div class="application-list" data-applications></div></div>
+          </article>
+          <article class="panel">
+            <div class="panel-header"><div><h2 class="panel-title">Tentativas de envio</h2><p class="panel-subtitle">Aceitação da API, latência e falhas antes da confirmação de entrega</p></div></div>
+            <div class="operations-toolbar">
+              <div class="operation-filters">
+                <select data-period aria-label="Período"><option value="1">24 horas</option><option value="7" selected>7 dias</option><option value="30">30 dias</option><option value="90">90 dias</option></select>
+                <select data-application aria-label="Aplicação"><option value="">Todas as aplicações</option></select>
+                <select data-outcome aria-label="Resultado"><option value="">Todos os resultados</option><option value="succeeded">Aceitas</option><option value="failed">Falhas</option></select>
+                <select data-error-code aria-label="Erro"><option value="">Todos os erros</option></select>
+              </div>
+              <button class="button" data-operations-refresh type="button">Recarregar</button>
+            </div>
+            <div class="error-breakdown" data-errors></div>
+            <div class="table-wrap">
+              <table class="operations-table">
+                <thead><tr><th>Horário</th><th>Aplicação</th><th>Endpoint</th><th>Resultado</th><th>Latência</th><th>Erro</th><th>Correlação</th></tr></thead>
+                <tbody data-attempts></tbody>
+              </table>
+            </div>
+            <div class="pagination"><span data-attempt-count>0 operações</span><span>Últimas 100 no período</span></div>
+          </article>
+        </section>
+      </main>
+      <div class="dialog-backdrop" data-form-dialog hidden>
+        <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="integration-dialog-title">
+          <div class="dialog-header"><div><h2 class="panel-title" id="integration-dialog-title" data-form-title>Nova integração</h2><p class="panel-subtitle">A credencial será exibida somente uma vez.</p></div><button class="button instance-action" data-close-form type="button">Fechar</button></div>
+          <form data-form>
+            <div class="dialog-body dialog-form">
+              <div class="field"><label for="app-name">Nome</label><input id="app-name" name="name" maxlength="160" required /></div>
+              <div class="field"><label for="app-slug">Identificador</label><input id="app-slug" name="slug" maxlength="100" pattern="[a-z0-9][a-z0-9-]{1,98}[a-z0-9]" placeholder="argo-erp" required /></div>
+              <div class="field"><label for="app-environment">Ambiente</label><select id="app-environment" name="environment"><option value="production">Produção</option><option value="staging">Homologação</option><option value="development">Desenvolvimento</option></select></div>
+              <div class="field"><label for="app-owner">Responsável</label><input id="app-owner" name="owner" maxlength="160" placeholder="Time ou pessoa" /></div>
+              <div class="field wide"><label for="app-base-url">URL da aplicação</label><input id="app-base-url" name="base_url" type="url" placeholder="https://erp.argo.app.br" /></div>
+              <div class="field wide"><label for="app-health-url">Endpoint de saúde</label><input id="app-health-url" name="health_url" type="url" placeholder="https://erp.argo.app.br/health" /></div>
+              <div class="field"><label for="app-heartbeat">Janela esperada (segundos)</label><input id="app-heartbeat" name="expected_heartbeat_seconds" type="number" min="30" max="86400" value="300" /></div>
+              <label class="checkbox-field"><input name="active" type="checkbox" checked /> Integração habilitada</label>
+            </div>
+            <div class="dialog-footer"><button class="button" data-cancel-form type="button">Cancelar</button><button class="button primary" data-save type="submit">Salvar integração</button></div>
+          </form>
+        </section>
+      </div>
+      <div class="dialog-backdrop" data-credential-dialog hidden>
+        <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="credential-title">
+          <div class="dialog-header"><div><h2 class="panel-title" id="credential-title">Credencial da integração</h2><p class="panel-subtitle" data-credential-app></p></div><button class="button instance-action" data-close-credential type="button">Fechar</button></div>
+          <div class="dialog-body"><p class="credential-warning">Copie e armazene esta credencial agora. Por segurança, ela não poderá ser consultada novamente.</p><div class="credential-box"><code class="credential-value" data-credential></code></div><div class="credential-actions"><button class="button primary" data-copy-credential type="button">Copiar credencial</button></div></div>
+        </section>
+      </div>`;
+
+    this.shadowRoot.querySelector("[data-refresh]").addEventListener("click", () => this.load());
+    this.shadowRoot.querySelector("[data-create]").addEventListener("click", () => this.openForm());
+    this.shadowRoot.querySelector("[data-operations-refresh]").addEventListener("click", () => this.loadOperations());
+    for (const selector of ["[data-period]", "[data-application]", "[data-outcome]", "[data-error-code]"]) {
+      this.shadowRoot.querySelector(selector).addEventListener("change", () => this.loadOperations());
+    }
+    this.shadowRoot.querySelector("[data-form]").addEventListener("submit", (event) => this.saveApplication(event));
+    for (const selector of ["[data-close-form]", "[data-cancel-form]"]) this.shadowRoot.querySelector(selector).addEventListener("click", () => this.closeForm());
+    this.shadowRoot.querySelector("[data-close-credential]").addEventListener("click", () => this.closeCredential());
+    this.shadowRoot.querySelector("[data-copy-credential]").addEventListener("click", () => this.copyCredential());
+    this.renderLoading();
+  }
+
+  renderLoading() {
+    this.shadowRoot.querySelector("[data-summary]").replaceChildren(...Array.from({ length: 4 }, () => element("div", "card skeleton", "Carregando")));
+    this.shadowRoot.querySelector("[data-applications]").replaceChildren(element("div", "empty", "Carregando aplicações..."));
+  }
+
+  operationFilters() {
+    const period = this.shadowRoot.querySelector("[data-period]").value;
+    return {
+      ...periodRange(period),
+      application: this.shadowRoot.querySelector("[data-application]").value,
+      outcome: this.shadowRoot.querySelector("[data-outcome]").value,
+      errorCode: this.shadowRoot.querySelector("[data-error-code]").value,
+      limit: 100,
+    };
+  }
+
+  async load() {
+    const signal = this.disconnectController();
+    this.setError("");
+    try {
+      const applications = await request("/argo/v1/applications", {}, signal);
+      this.applications = Array.isArray(applications) ? applications : [];
+      this.renderApplicationFilter();
+      this.renderApplications();
+      await this.loadOperations(signal);
+    } catch (error) {
+      if (error.name !== "AbortError") this.setError(error.message);
+    }
+  }
+
+  async loadOperations(existingSignal) {
+    const signal = existingSignal || this.disconnectController();
+    this.setError("");
+    try {
+      const filters = this.operationFilters();
+      const [summary, attempts] = await Promise.all([
+        request("/argo/v1/operations/summary", filters, signal),
+        request("/argo/v1/operations/attempts", filters, signal),
+      ]);
+      this.summary = summary || {};
+      this.attempts = Array.isArray(attempts) ? attempts : [];
+      this.renderSummary();
+      this.renderErrors();
+      this.renderAttempts();
+    } catch (error) {
+      if (error.name !== "AbortError") this.setError(error.message);
+    }
+  }
+
+  hasRecentActivity(application) {
+    if (!application.active || !application.last_seen_at) return false;
+    const expected = Math.max(Number(application.expected_heartbeat_seconds) || 300, 30) * 2000;
+    return Date.now() - new Date(application.last_seen_at).getTime() <= expected;
+  }
+
+  renderSummary() {
+    const enabled = this.applications.filter((item) => item.active).length;
+    const recent = this.applications.filter((item) => this.hasRecentActivity(item)).length;
+    const total = Number(this.summary?.total || 0);
+    const failed = Number(this.summary?.failed || 0);
+    const failureRate = total ? (failed / total) * 100 : 0;
+    const cards = [
+      ["Aplicações", this.applications.length, `${enabled} habilitadas`, ""],
+      ["Atividade recente", recent, "Baseada em chamadas autenticadas", recent ? "good" : ""],
+      ["Tentativas", total, `${numberFormatter.format(this.summary?.succeeded || 0)} aceitas pela API`, ""],
+      ["Taxa de falha", `${percentFormatter.format(failureRate)}%`, `${numberFormatter.format(failed)} falhas`, failed ? "bad" : "good"],
+    ];
+    this.shadowRoot.querySelector("[data-summary]").replaceChildren(...cards.map(([label, value, note, tone]) => {
+      const card = element("article", "card");
+      const head = element("div", "metric-head");
+      head.append(element("span", "metric-label", label), element("span", `metric-icon ${tone}`, "•"));
+      card.append(head, element("div", `metric-value ${tone}`, typeof value === "number" ? numberFormatter.format(value) : value), element("div", "metric-note", note));
+      return card;
+    }));
+  }
+
+  renderApplicationFilter() {
+    const select = this.shadowRoot.querySelector("[data-application]");
+    const current = select.value;
+    select.replaceChildren(option("", "Todas as aplicações"));
+    for (const application of this.applications) select.append(option(application.slug, application.name));
+    if ([...select.options].some((item) => item.value === current)) select.value = current;
+  }
+
+  renderApplications() {
+    const target = this.shadowRoot.querySelector("[data-applications]");
+    this.shadowRoot.querySelector("[data-app-count]").textContent = `${this.applications.length} cadastradas`;
+    if (!this.applications.length) {
+      const empty = element("div", "empty");
+      empty.append(element("strong", "", "Nenhuma integração cadastrada"), element("span", "", "Cadastre o ERP, Athlas ou outro consumidor para identificar os envios."));
+      target.replaceChildren(empty);
+      return;
+    }
+    target.replaceChildren(...this.applications.map((application) => {
+      const row = element("section", "application-row");
+      const top = element("div", "application-top");
+      const title = element("div", "application-title");
+      title.append(element("div", "application-name", application.name), element("div", "application-slug", application.slug));
+      const active = element("span", `status-pill ${application.active ? "active" : "inactive"}`, application.active ? "Habilitada" : "Desabilitada");
+      top.append(title, active);
+      const meta = element("div", "application-meta");
+      const values = [
+        ["Ambiente", application.environment || "production"],
+        ["Responsável", application.owner || "Não informado"],
+        ["Aplicação", application.base_url || "URL não informada"],
+        ["Health check", application.health_url || "Não configurado"],
+        ["Última chamada", relativeTime(application.last_seen_at)],
+        ["Atividade", this.hasRecentActivity(application) ? "Recente e autenticada" : application.last_seen_at ? "Fora da janela" : "Ainda não observada"],
+      ];
+      for (const [label, value] of values) {
+        const item = element("div");
+        item.append(element("span", "meta-label", label), element("span", "meta-value", value));
+        meta.append(item);
+      }
+      const actions = element("div", "application-actions");
+      const edit = element("button", "button instance-action", "Editar");
+      edit.type = "button";
+      edit.addEventListener("click", () => this.openForm(application));
+      const rotate = element("button", "button instance-action", "Girar credencial");
+      rotate.type = "button";
+      rotate.addEventListener("click", () => this.rotateCredential(application, rotate));
+      actions.append(edit, rotate);
+      row.append(top, meta, actions);
+      return row;
+    }));
+  }
+
+  renderErrors() {
+    const target = this.shadowRoot.querySelector("[data-errors]");
+    const errors = this.summary?.errors || [];
+    const select = this.shadowRoot.querySelector("[data-error-code]");
+    const current = select.value;
+    select.replaceChildren(option("", "Todos os erros"));
+    for (const item of errors) select.append(option(item.error_code, `${item.error_code} (${item.count})`));
+    if ([...select.options].some((item) => item.value === current)) select.value = current;
+    target.replaceChildren(...errors.slice(0, 8).map((item) => {
+      const token = element("button", "error-token", `${item.error_code} · ${numberFormatter.format(item.count)}`);
+      token.type = "button";
+      token.addEventListener("click", () => { select.value = item.error_code; this.loadOperations(); });
+      return token;
+    }));
+  }
+
+  renderAttempts() {
+    const target = this.shadowRoot.querySelector("[data-attempts]");
+    this.shadowRoot.querySelector("[data-attempt-count]").textContent = `${numberFormatter.format(this.attempts.length)} operações`;
+    if (!this.attempts.length) {
+      const row = element("tr");
+      const cell = element("td", "operation-muted", "Nenhuma tentativa encontrada para os filtros selecionados.");
+      cell.colSpan = 7;
+      row.append(cell);
+      target.replaceChildren(row);
+      return;
+    }
+    target.replaceChildren(...this.attempts.map((attempt) => {
+      const row = element("tr");
+      const time = element("td", "", dateTimeFormatter.format(new Date(attempt.started_at)));
+      const application = element("td", "mono", attempt.application_slug || "legacy/unknown");
+      application.title = attempt.identity_verified ? "Identidade verificada" : "Identidade não verificada";
+      const endpoint = element("td", "mono", attempt.endpoint || "-");
+      const result = element("td", attempt.outcome === "succeeded" ? "operation-ok" : "operation-error", attempt.outcome === "succeeded" ? `${attempt.http_status} Aceita` : `${attempt.http_status} Falha`);
+      const duration = element("td", "", `${numberFormatter.format(attempt.duration_ms || 0)} ms`);
+      const error = element("td", attempt.error_code ? "operation-error" : "operation-muted", attempt.error_code || "-");
+      error.title = attempt.error_detail || "";
+      const correlation = element("td", "mono", attempt.correlation_id || "-");
+      correlation.title = attempt.correlation_id || "";
+      row.append(time, application, endpoint, result, duration, error, correlation);
+      return row;
+    }));
+  }
+
+  openForm(application = null) {
+    this.editing = application;
+    const form = this.shadowRoot.querySelector("[data-form]");
+    form.reset();
+    form.elements.active.checked = application ? Boolean(application.active) : true;
+    form.elements.expected_heartbeat_seconds.value = application?.expected_heartbeat_seconds || 300;
+    for (const key of ["name", "slug", "environment", "owner", "base_url", "health_url"]) {
+      if (application && form.elements[key]) form.elements[key].value = application[key] || "";
+    }
+    form.elements.slug.disabled = Boolean(application);
+    this.shadowRoot.querySelector("[data-form-title]").textContent = application ? `Editar ${application.name}` : "Nova integração";
+    this.shadowRoot.querySelector("[data-form-dialog]").hidden = false;
+    form.elements.name.focus();
+  }
+
+  closeForm() {
+    this.shadowRoot.querySelector("[data-form-dialog]").hidden = true;
+    this.editing = null;
+  }
+
+  async saveApplication(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = this.shadowRoot.querySelector("[data-save]");
+    const body = Object.fromEntries(new FormData(form).entries());
+    body.active = form.elements.active.checked;
+    body.expected_heartbeat_seconds = Number(body.expected_heartbeat_seconds || 300);
+    if (this.editing) body.slug = this.editing.slug;
+    button.disabled = true;
+    button.textContent = "Salvando...";
+    this.setError("");
+    try {
+      const path = this.editing ? `/argo/v1/applications/${encodeURIComponent(this.editing.id)}` : "/argo/v1/applications";
+      const result = await request(path, {}, undefined, { method: this.editing ? "PUT" : "POST", body });
+      this.closeForm();
+      if (result?.credential) this.showCredential(result.application, result.credential);
+      await this.load();
+    } catch (error) {
+      this.setError(error.message);
+    } finally {
+      button.disabled = false;
+      button.textContent = "Salvar integração";
+    }
+  }
+
+  async rotateCredential(application, button) {
+    if (!window.confirm(`Girar a credencial de ${application.name}? A credencial atual deixará de identificar novas chamadas.`)) return;
+    button.disabled = true;
+    button.textContent = "Gerando...";
+    this.setError("");
+    try {
+      const result = await request(`/argo/v1/applications/${encodeURIComponent(application.id)}/rotate-credential`, {}, undefined, { method: "POST" });
+      this.showCredential(result.application, result.credential);
+    } catch (error) {
+      this.setError(error.message);
+    } finally {
+      button.disabled = false;
+      button.textContent = "Girar credencial";
+    }
+  }
+
+  showCredential(application, credential) {
+    this.currentCredential = credential;
+    this.shadowRoot.querySelector("[data-credential-app]").textContent = application?.name || "Integração";
+    this.shadowRoot.querySelector("[data-credential]").textContent = credential;
+    this.shadowRoot.querySelector("[data-copy-credential]").textContent = "Copiar credencial";
+    this.shadowRoot.querySelector("[data-credential-dialog]").hidden = false;
+  }
+
+  closeCredential() {
+    this.shadowRoot.querySelector("[data-credential-dialog]").hidden = true;
+    this.currentCredential = "";
+    this.shadowRoot.querySelector("[data-credential]").textContent = "";
+  }
+
+  async copyCredential() {
+    if (!this.currentCredential) return;
+    try {
+      await navigator.clipboard.writeText(this.currentCredential);
+      this.shadowRoot.querySelector("[data-copy-credential]").textContent = "Copiada";
+    } catch {
+      this.setError("Não foi possível copiar automaticamente. Selecione a credencial e copie manualmente.");
+    }
+  }
+}
+
 class ArgoConversations extends ArgoBaseElement {
   connectedCallback() {
     this.instances = [];
@@ -750,4 +1161,5 @@ class ArgoConversations extends ArgoBaseElement {
 }
 
 if (!customElements.get("argo-dashboard")) customElements.define("argo-dashboard", ArgoDashboard);
+if (!customElements.get("argo-integrations")) customElements.define("argo-integrations", ArgoIntegrations);
 if (!customElements.get("argo-conversations")) customElements.define("argo-conversations", ArgoConversations);
