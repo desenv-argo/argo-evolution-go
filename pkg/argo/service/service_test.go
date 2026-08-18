@@ -89,3 +89,33 @@ func TestCleanValue(t *testing.T) {
 		t.Fatalf("cleanValue() = %q", got)
 	}
 }
+
+func TestSummarizeLifecycleBuildsFunnelAndPercentiles(t *testing.T) {
+	start := time.Date(2026, time.August, 18, 12, 0, 0, 0, time.UTC)
+	attemptOne := "attempt-1"
+	attemptTwo := "attempt-2"
+	events := []argo_model.MessageLifecycleEvent{
+		{AttemptID: &attemptOne, State: "received", OccurredAt: start},
+		{AttemptID: &attemptOne, State: "validated", OccurredAt: start.Add(10 * time.Millisecond)},
+		{AttemptID: &attemptOne, State: "accepted", OccurredAt: start.Add(20 * time.Millisecond)},
+		{AttemptID: &attemptOne, State: "sent", OccurredAt: start.Add(100 * time.Millisecond)},
+		{AttemptID: &attemptOne, State: "delivered", OccurredAt: start.Add(1100 * time.Millisecond)},
+		{AttemptID: &attemptOne, State: "read", OccurredAt: start.Add(3100 * time.Millisecond)},
+		{AttemptID: &attemptTwo, State: "received", OccurredAt: start},
+		{AttemptID: &attemptTwo, State: "failed", FailureCategory: "validation", FailureCode: "INVALID_RECIPIENT", OccurredAt: start.Add(50 * time.Millisecond)},
+	}
+
+	summary := summarizeLifecycle(events, start, start.Add(time.Hour))
+	if summary.Received != 2 || summary.Accepted != 1 || summary.Sent != 1 || summary.Delivered != 1 || summary.Read != 1 || summary.Failed != 1 {
+		t.Fatalf("unexpected funnel summary: %#v", summary)
+	}
+	if summary.AcceptanceRate != 50 || summary.SendRate != 100 || summary.DeliveryRate != 100 || summary.ReadRate != 100 {
+		t.Fatalf("unexpected rates: %#v", summary)
+	}
+	if summary.SendLatency.P50 != 100 || summary.DeliveryLatency.P95 != 1000 || summary.ReadLatency.P99 != 2000 {
+		t.Fatalf("unexpected latency percentiles: %#v", summary)
+	}
+	if len(summary.Failures) != 1 || summary.Failures[0].Code != "INVALID_RECIPIENT" {
+		t.Fatalf("unexpected failure breakdown: %#v", summary.Failures)
+	}
+}

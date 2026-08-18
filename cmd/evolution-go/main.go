@@ -181,6 +181,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		instanceRepository,
 		authDB,
 		message_repository.NewMessageRepository(db),
+		argoService,
 		labelRepository,
 		captureGate,
 		config,
@@ -289,6 +290,7 @@ func migrate(db *gorm.DB) {
 		&argo_model.Application{},
 		&argo_model.MessageAttempt{},
 		&argo_model.IntegrationHeartbeat{},
+		&argo_model.MessageLifecycleEvent{},
 	); err != nil {
 		log.Fatal(err)
 	}

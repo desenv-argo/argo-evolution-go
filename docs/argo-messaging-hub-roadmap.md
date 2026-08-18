@@ -95,12 +95,24 @@ envio.
 
 ## Fase 4 — ciclo completo da mensagem
 
-- transições `received`, `validated`, `accepted`, `sent`, `delivered`, `read`;
-- estados de falha conhecidos e `pending_aged` para ausência de recibo após o limite;
-- histórico de transições sem sobrescrever evidências anteriores;
-- tempos P50, P95 e P99 para envio, entrega e leitura;
-- funil por aplicação, instância, tipo de mensagem e período;
-- reconciliação entre tentativas, mensagens e receipts.
+Status: primeiro vertical slice operacional implementado.
+
+- [x] transições `received`, `validated`, `accepted`, `sent`, `delivered`, `read`, `failed` e `pending_aged`;
+- [x] estados de falha conhecidos e categorizados;
+- [x] histórico imutável em `argo_message_lifecycle_events`, sem sobrescrever evidências anteriores;
+- [x] correlação por tentativa, `provider_message_id`, instância, aplicação, correlation ID e idempotency key;
+- [x] reconciliação de `pending_aged` para ausência de receipt após janela configurável;
+- [x] taxas de aceitação, envio, entrega e leitura;
+- [x] tempos P50, P90, P95 e P99 para envio, entrega e leitura;
+- [x] filtros por aplicação, instância, período, tipo, estado e identificadores de correlação;
+- [x] API administrativa em `/argo/v1/messages/lifecycle` e `/argo/v1/messages/lifecycle/summary`;
+- [x] tela enterprise com funil, falhas, latências e drill-down da linha do tempo;
+- [ ] worker periódico dedicado para reconciliação fora do ciclo de consultas;
+- [ ] backfill opcional para mensagens anteriores à criação da tabela Argo.
+
+A janela padrão de envelhecimento é 15 minutos e pode ser alterada com
+`ARGO_MESSAGE_PENDING_AGE_MINUTES` (1 a 10.080 minutos). Envios sem headers Argo
+continuam no funil como `legacy/unknown`.
 
 ## Fase 5 — operação e decisão
 

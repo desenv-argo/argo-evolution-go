@@ -3,6 +3,7 @@ package argo_repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	argo_model "github.com/evolution-foundation/evolution-go/pkg/argo/model"
 	"gorm.io/gorm"
@@ -20,6 +21,10 @@ type Repository interface {
 	RecordHeartbeat(ctx context.Context, heartbeat *argo_model.IntegrationHeartbeat) error
 	ListHeartbeats(ctx context.Context, filters argo_model.HeartbeatFilters) ([]argo_model.IntegrationHeartbeat, error)
 	HeartbeatMetrics(ctx context.Context, filters argo_model.HeartbeatFilters) (int64, int64, float64, error)
+	RecordReceipt(ctx context.Context, instanceID string, providerMessageIDs []string, state string, occurredAt time.Time) error
+	ListLifecycleEvents(ctx context.Context, filters argo_model.LifecycleFilters) ([]argo_model.MessageLifecycleEvent, error)
+	LifecycleEvents(ctx context.Context, filters argo_model.LifecycleFilters) ([]argo_model.MessageLifecycleEvent, error)
+	ReconcilePendingAged(ctx context.Context, cutoff time.Time) (int64, error)
 }
 
 func (r *repository) RecordHeartbeat(ctx context.Context, heartbeat *argo_model.IntegrationHeartbeat) error {
@@ -105,6 +110,9 @@ func (r *repository) ListApplications(ctx context.Context) ([]argo_model.Applica
 func (r *repository) RecordAttempt(ctx context.Context, attempt *argo_model.MessageAttempt) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(attempt).Error; err != nil {
+			return err
+		}
+		if err := r.recordAttemptLifecycle(tx, attempt); err != nil {
 			return err
 		}
 		if attempt.ApplicationID != nil && attempt.IdentityVerified {

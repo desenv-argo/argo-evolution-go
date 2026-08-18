@@ -180,6 +180,25 @@ const styles = String.raw`
   .credential-warning { margin: 0 0 12px; color: #d4c098; font-size: 11px; line-height: 1.5; }
   .credential-actions { justify-content: flex-end; gap: 7px; margin-top: 12px; }
 
+  .lifecycle-page { padding-bottom: 22px; }
+  .lifecycle-funnel { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 8px; margin-bottom: 14px; }
+  .funnel-stage { position: relative; min-height: 90px; border: 1px solid var(--argo-border); border-radius: 9px; background: linear-gradient(145deg, #121713, #0c100d); padding: 12px; }
+  .funnel-stage:not(:last-child)::after { content: "›"; position: absolute; z-index: 2; right: -8px; top: 31px; color: #526058; font-size: 20px; }
+  .funnel-stage strong { display: block; margin-top: 8px; font-size: 23px; letter-spacing: -.03em; }
+  .funnel-stage small { color: var(--argo-muted); font-size: 9px; }
+  .lifecycle-alerts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+  .alert-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--argo-border); border-radius: 9px; background: #101411; padding: 10px 13px; }
+  .alert-card strong { font-size: 18px; }
+  .lifecycle-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(310px, .55fr); gap: 14px; align-items: start; }
+  .latency-list, .failure-list, .lifecycle-timeline { display: grid; gap: 8px; }
+  .latency-row { display: grid; grid-template-columns: minmax(80px, 1fr) repeat(4, minmax(45px, auto)); gap: 8px; align-items: center; border-bottom: 1px solid rgba(255,255,255,.055); padding: 8px 0; font-size: 10px; }
+  .latency-row:last-child { border-bottom: 0; }
+  .latency-row span:not(:first-child) { color: #cbd4ce; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; text-align: right; }
+  .timeline-event { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 9px; align-items: start; }
+  .timeline-event::before { content: ""; width: 8px; height: 8px; margin-top: 4px; border-radius: 999px; background: var(--argo-green); box-shadow: 0 0 0 3px rgba(0,229,155,.08); }
+  .timeline-event.failed::before, .timeline-event.pending_aged::before { background: var(--argo-red); box-shadow: 0 0 0 3px rgba(255,93,115,.08); }
+  .timeline-event time { color: var(--argo-muted); font-size: 9px; white-space: nowrap; }
+
   .conversation-page { padding-bottom: 18px; }
   .conversation-layout { display: grid; grid-template-columns: minmax(285px, 360px) minmax(0, 1fr); min-height: 650px; max-height: calc(100vh - 230px); }
   .conversation-sidebar { display: flex; min-width: 0; flex-direction: column; border-right: 1px solid var(--argo-border); }
@@ -212,6 +231,7 @@ const styles = String.raw`
     .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .dashboard-grid { grid-template-columns: 1fr; }
     .integration-grid { grid-template-columns: 1fr; }
+	.lifecycle-layout { grid-template-columns: 1fr; }
   }
   @media (max-width: 820px) {
     .page { padding: 18px; }
@@ -219,6 +239,8 @@ const styles = String.raw`
     .toolbar { justify-content: flex-start; }
     .metrics { grid-template-columns: 1fr; }
     .integration-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.lifecycle-funnel { grid-template-columns: 1fr; }
+	.funnel-stage:not(:last-child)::after { display: none; }
     .dialog-form { grid-template-columns: 1fr; }
     .dialog-form .wide { grid-column: auto; }
     .conversation-layout { grid-template-columns: 1fr; max-height: none; }
@@ -951,6 +973,220 @@ class ArgoIntegrations extends ArgoBaseElement {
   }
 }
 
+class ArgoMessageLifecycle extends ArgoBaseElement {
+  connectedCallback() {
+    this.applications = [];
+    this.events = [];
+    this.summary = {};
+    this.render();
+    this.loadInitial();
+  }
+
+  render() {
+    this.shadowRoot.innerHTML = `
+      <style>${styles}</style>
+      <main class="page lifecycle-page">
+        <header class="header">
+          <div class="brand"><img src="/assets/argo-brand.png" alt="Argo" /><div><p class="eyebrow">Operação de mensageria</p><h1>Ciclo das mensagens</h1><p class="subtitle">Do recebimento da API à leitura no WhatsApp, com correlação e evidências imutáveis.</p></div></div>
+          <div class="toolbar"><button class="button" data-refresh type="button">Atualizar</button></div>
+        </header>
+        <div class="error" data-error hidden></div>
+        <div class="operations-toolbar panel">
+          <div class="operation-filters">
+            <select data-period><option value="1">24 horas</option><option value="7" selected>7 dias</option><option value="30">30 dias</option><option value="90">90 dias</option></select>
+            <select data-application><option value="">Todas as aplicações</option></select>
+            <input data-instance placeholder="ID da instância" />
+            <select data-type><option value="">Todos os tipos</option><option value="text">Texto</option><option value="link">Link</option><option value="media">Mídia</option><option value="poll">Enquete</option><option value="sticker">Sticker</option><option value="location">Localização</option><option value="contact">Contato</option><option value="button">Botão</option></select>
+            <select data-state><option value="">Todos os estados</option><option value="received">Recebida</option><option value="accepted">Aceita</option><option value="sent">Enviada</option><option value="delivered">Entregue</option><option value="read">Lida</option><option value="failed">Falha</option><option value="pending_aged">Pendente envelhecida</option></select>
+          </div>
+        </div>
+        <section class="lifecycle-funnel" data-funnel></section>
+        <section class="lifecycle-alerts" data-alerts></section>
+        <section class="lifecycle-layout">
+          <article class="panel">
+            <div class="panel-header"><div><h2 class="panel-title">Transições recentes</h2><p class="panel-subtitle">Clique em uma transição para abrir a linha do tempo correlacionada</p></div><span class="status-pill" data-event-count>0</span></div>
+            <div class="table-wrap"><table class="operations-table"><thead><tr><th>Horário</th><th>Estado</th><th>Aplicação</th><th>Instância</th><th>Tipo</th><th>Message ID</th><th>Correlação</th></tr></thead><tbody data-events></tbody></table></div>
+          </article>
+          <aside class="panel">
+            <div class="panel-header"><div><h2 class="panel-title">Latências</h2><p class="panel-subtitle">P50, P90, P95 e P99 em milissegundos</p></div></div>
+            <div class="panel-body latency-list" data-latencies></div>
+            <div class="panel-header"><div><h2 class="panel-title">Falhas conhecidas</h2><p class="panel-subtitle">Categorias operacionais no período</p></div></div>
+            <div class="panel-body failure-list" data-failures></div>
+          </aside>
+        </section>
+      </main>
+      <div class="dialog-backdrop" data-timeline-dialog hidden>
+        <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="lifecycle-timeline-title">
+          <div class="dialog-header"><div><h2 class="panel-title" id="lifecycle-timeline-title">Linha do tempo</h2><p class="panel-subtitle mono" data-timeline-id></p></div><button class="button instance-action" data-close-timeline type="button">Fechar</button></div>
+          <div class="dialog-body lifecycle-timeline" data-timeline></div>
+        </section>
+      </div>`;
+    this.shadowRoot.querySelector("[data-refresh]").addEventListener("click", () => this.load());
+    for (const selector of ["[data-period]", "[data-application]", "[data-type]", "[data-state]"]) {
+      this.shadowRoot.querySelector(selector).addEventListener("change", () => this.load());
+    }
+    let timer;
+    this.shadowRoot.querySelector("[data-instance]").addEventListener("input", () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => this.load(), 350);
+    });
+    this.shadowRoot.querySelector("[data-close-timeline]").addEventListener("click", () => { this.shadowRoot.querySelector("[data-timeline-dialog]").hidden = true; });
+  }
+
+  filters() {
+    return {
+      ...periodRange(this.shadowRoot.querySelector("[data-period]").value),
+      application: this.shadowRoot.querySelector("[data-application]").value,
+      instanceId: this.shadowRoot.querySelector("[data-instance]").value.trim(),
+      type: this.shadowRoot.querySelector("[data-type]").value,
+      state: this.shadowRoot.querySelector("[data-state]").value,
+      limit: 200,
+    };
+  }
+
+  async loadInitial() {
+    const signal = this.disconnectController();
+    try {
+      const applications = await request("/argo/v1/applications", {}, signal);
+      this.applications = Array.isArray(applications) ? applications : [];
+      const select = this.shadowRoot.querySelector("[data-application]");
+      for (const application of this.applications) select.append(option(application.slug, application.name));
+      await this.load(signal);
+    } catch (error) {
+      if (error.name !== "AbortError") this.setError(error.message);
+    }
+  }
+
+  async load(existingSignal) {
+    const signal = existingSignal || this.disconnectController();
+    this.setError("");
+    try {
+      const filters = this.filters();
+      const summaryFilters = { ...filters };
+      delete summaryFilters.state;
+      const [summary, events] = await Promise.all([
+        request("/argo/v1/messages/lifecycle/summary", summaryFilters, signal),
+        request("/argo/v1/messages/lifecycle", filters, signal),
+      ]);
+      this.summary = summary || {};
+      this.events = Array.isArray(events) ? events : [];
+      this.renderSummary();
+      this.renderEvents();
+      this.renderLatencies();
+      this.renderFailures();
+    } catch (error) {
+      if (error.name !== "AbortError") this.setError(error.message);
+    }
+  }
+
+  renderSummary() {
+    const stages = [
+      ["Recebidas", "received", "100% da entrada"],
+      ["Aceitas", "accepted", `${percentFormatter.format(this.summary.acceptance_rate || 0)}% de aceitação`],
+      ["Enviadas", "sent", `${percentFormatter.format(this.summary.send_rate || 0)}% das aceitas`],
+      ["Entregues", "delivered", `${percentFormatter.format(this.summary.delivery_rate || 0)}% das enviadas`],
+      ["Lidas", "read", `${percentFormatter.format(this.summary.read_rate || 0)}% das entregues`],
+    ];
+    this.shadowRoot.querySelector("[data-funnel]").replaceChildren(...stages.map(([label, key, note]) => {
+      const stage = element("article", "funnel-stage");
+      stage.append(element("small", "", label), element("strong", "", numberFormatter.format(this.summary[key] || 0)), element("small", "", note));
+      return stage;
+    }));
+    const alerts = [
+      ["Falhas", this.summary.failed || 0, "Estados terminais conhecidos", "bad"],
+      ["Pendentes envelhecidas", this.summary.pending_aged || 0, `Sem receipt após ${this.summary.pending_age_minutes || 15} min`, "warn"],
+    ];
+    this.shadowRoot.querySelector("[data-alerts]").replaceChildren(...alerts.map(([label, value, note, tone]) => {
+      const card = element("article", "alert-card");
+      const copy = element("div");
+      copy.append(element("div", "metric-label", label), element("div", "metric-note", note));
+      card.append(copy, element("strong", tone, numberFormatter.format(value)));
+      return card;
+    }));
+  }
+
+  renderEvents() {
+    const target = this.shadowRoot.querySelector("[data-events]");
+    this.shadowRoot.querySelector("[data-event-count]").textContent = `${numberFormatter.format(this.events.length)} eventos`;
+    if (!this.events.length) {
+      const row = element("tr");
+      const cell = element("td", "operation-muted", "Nenhuma transição encontrada para os filtros selecionados.");
+      cell.colSpan = 7;
+      row.append(cell);
+      target.replaceChildren(row);
+      return;
+    }
+    target.replaceChildren(...this.events.map((event) => {
+      const row = element("tr");
+      row.tabIndex = 0;
+      row.title = "Abrir linha do tempo";
+      row.addEventListener("click", () => this.openTimeline(event));
+      row.addEventListener("keydown", (keyboardEvent) => { if (keyboardEvent.key === "Enter") this.openTimeline(event); });
+      const stateClass = ["failed", "pending_aged"].includes(event.state) ? "operation-error" : "operation-ok";
+      row.append(
+        element("td", "", dateTimeFormatter.format(new Date(event.occurred_at))),
+        element("td", stateClass, event.state),
+        element("td", "mono", event.application_slug || "legacy/unknown"),
+        element("td", "mono", event.instance_id || "-"),
+        element("td", "", event.message_type || "-"),
+        element("td", "mono", event.provider_message_id || "-"),
+        element("td", "mono", event.correlation_id || "-"),
+      );
+      return row;
+    }));
+  }
+
+  renderLatencies() {
+    const rows = [["API → envio", this.summary.send_latency], ["Envio → entrega", this.summary.delivery_latency], ["Entrega → leitura", this.summary.read_latency]];
+    this.shadowRoot.querySelector("[data-latencies]").replaceChildren(...rows.map(([label, values = {}]) => {
+      const row = element("div", "latency-row");
+      row.append(element("strong", "", label));
+      for (const key of ["p50_ms", "p90_ms", "p95_ms", "p99_ms"]) row.append(element("span", "", `${key.slice(0, 3).toUpperCase()} ${numberFormatter.format(Math.round(values?.[key] || 0))}`));
+      return row;
+    }));
+  }
+
+  renderFailures() {
+    const failures = this.summary.failures || [];
+    const target = this.shadowRoot.querySelector("[data-failures]");
+    if (!failures.length) {
+      target.replaceChildren(element("div", "operation-muted", "Nenhuma falha no período."));
+      return;
+    }
+    target.replaceChildren(...failures.slice(0, 10).map((failure) => {
+      const row = element("div", "alert-card");
+      const copy = element("div");
+      copy.append(element("div", "metric-label", failure.category || "internal"), element("div", "metric-note mono", failure.code || "INTERNAL_ERROR"));
+      row.append(copy, element("strong", "bad", numberFormatter.format(failure.count || 0)));
+      return row;
+    }));
+  }
+
+  async openTimeline(event) {
+    const dialog = this.shadowRoot.querySelector("[data-timeline-dialog]");
+    const target = this.shadowRoot.querySelector("[data-timeline]");
+    dialog.hidden = false;
+    this.shadowRoot.querySelector("[data-timeline-id]").textContent = event.provider_message_id || event.correlation_id || event.attempt_id || "Sem identificador";
+    target.replaceChildren(element("div", "empty", "Carregando linha do tempo..."));
+    try {
+      const filters = { ...periodRange(366), limit: 100 };
+      if (event.provider_message_id) filters.providerMessageId = event.provider_message_id;
+      else if (event.correlation_id) filters.correlationId = event.correlation_id;
+      const timeline = await request("/argo/v1/messages/lifecycle", filters);
+      const ordered = (Array.isArray(timeline) ? timeline : []).sort((a, b) => new Date(a.occurred_at) - new Date(b.occurred_at));
+      target.replaceChildren(...ordered.map((item) => {
+        const row = element("div", `timeline-event ${item.state}`);
+        const copy = element("div");
+        copy.append(element("strong", "", item.state), element("div", "metric-note", item.failure_code ? `${item.failure_code} · ${item.failure_detail || ""}` : `${item.application_slug || "legacy/unknown"} · ${item.message_type || "mensagem"}`));
+        row.append(copy, element("time", "", dateTimeFormatter.format(new Date(item.occurred_at))));
+        return row;
+      }));
+    } catch (error) {
+      target.replaceChildren(element("div", "error", error.message));
+    }
+  }
+}
+
 class ArgoConversations extends ArgoBaseElement {
   connectedCallback() {
     this.instances = [];
@@ -1183,4 +1419,5 @@ class ArgoConversations extends ArgoBaseElement {
 
 if (!customElements.get("argo-dashboard")) customElements.define("argo-dashboard", ArgoDashboard);
 if (!customElements.get("argo-integrations")) customElements.define("argo-integrations", ArgoIntegrations);
+if (!customElements.get("argo-message-lifecycle")) customElements.define("argo-message-lifecycle", ArgoMessageLifecycle);
 if (!customElements.get("argo-conversations")) customElements.define("argo-conversations", ArgoConversations);

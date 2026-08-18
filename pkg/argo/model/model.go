@@ -145,3 +145,84 @@ type AttemptSummary struct {
 	AverageDurationMS  float64          `json:"average_duration_ms"`
 	Errors             []ErrorBreakdown `json:"errors"`
 }
+
+// MessageLifecycleEvent is an immutable fact in the operational lifecycle of
+// a message. It deliberately duplicates correlation attributes from the
+// attempt so historical evidence remains queryable even when an application
+// or upstream message changes later.
+type MessageLifecycleEvent struct {
+	ID                string    `json:"id" gorm:"type:uuid;primaryKey"`
+	EventKey          string    `json:"-" gorm:"size:320;uniqueIndex;not null"`
+	AttemptID         *string   `json:"attempt_id,omitempty" gorm:"type:uuid;index"`
+	ApplicationID     *string   `json:"application_id,omitempty" gorm:"type:uuid;index"`
+	ApplicationSlug   string    `json:"application_slug" gorm:"size:100;index;not null"`
+	IdentityVerified  bool      `json:"identity_verified" gorm:"not null;default:false"`
+	InstanceID        *string   `json:"instance_id,omitempty" gorm:"type:uuid;index:idx_argo_lifecycle_instance_message,priority:1"`
+	ProviderMessageID string    `json:"provider_message_id,omitempty" gorm:"size:128;index:idx_argo_lifecycle_instance_message,priority:2;index"`
+	CorrelationID     string    `json:"correlation_id,omitempty" gorm:"size:64;index"`
+	IdempotencyKey    string    `json:"idempotency_key,omitempty" gorm:"size:128;index"`
+	MessageType       string    `json:"message_type,omitempty" gorm:"size:48;index"`
+	State             string    `json:"state" gorm:"size:24;index;not null"`
+	FailureCategory   string    `json:"failure_category,omitempty" gorm:"size:48;index"`
+	FailureCode       string    `json:"failure_code,omitempty" gorm:"size:64;index"`
+	FailureDetail     string    `json:"failure_detail,omitempty" gorm:"size:500"`
+	OccurredAt        time.Time `json:"occurred_at" gorm:"index;not null"`
+	CreatedAt         time.Time `json:"created_at" gorm:"autoCreateTime"`
+}
+
+func (MessageLifecycleEvent) TableName() string { return "argo_message_lifecycle_events" }
+
+func (e *MessageLifecycleEvent) BeforeCreate(tx *gorm.DB) error {
+	if e.ID == "" {
+		e.ID = uuid.NewString()
+	}
+	return nil
+}
+
+type LifecycleFilters struct {
+	From              time.Time
+	To                time.Time
+	ApplicationSlug   string
+	InstanceID        string
+	MessageType       string
+	State             string
+	ProviderMessageID string
+	CorrelationID     string
+	IdempotencyKey    string
+	Limit             int
+}
+
+type LifecycleLatency struct {
+	P50 float64 `json:"p50_ms"`
+	P90 float64 `json:"p90_ms"`
+	P95 float64 `json:"p95_ms"`
+	P99 float64 `json:"p99_ms"`
+}
+
+type LifecycleFailure struct {
+	Category string `json:"category"`
+	Code     string `json:"code"`
+	Count    int64  `json:"count"`
+}
+
+type LifecycleSummary struct {
+	From              time.Time          `json:"from"`
+	To                time.Time          `json:"to"`
+	Received          int64              `json:"received"`
+	Validated         int64              `json:"validated"`
+	Accepted          int64              `json:"accepted"`
+	Sent              int64              `json:"sent"`
+	Delivered         int64              `json:"delivered"`
+	Read              int64              `json:"read"`
+	Failed            int64              `json:"failed"`
+	PendingAged       int64              `json:"pending_aged"`
+	AcceptanceRate    float64            `json:"acceptance_rate"`
+	SendRate          float64            `json:"send_rate"`
+	DeliveryRate      float64            `json:"delivery_rate"`
+	ReadRate          float64            `json:"read_rate"`
+	SendLatency       LifecycleLatency   `json:"send_latency"`
+	DeliveryLatency   LifecycleLatency   `json:"delivery_latency"`
+	ReadLatency       LifecycleLatency   `json:"read_latency"`
+	Failures          []LifecycleFailure `json:"failures"`
+	PendingAgeMinutes int64              `json:"pending_age_minutes"`
+}

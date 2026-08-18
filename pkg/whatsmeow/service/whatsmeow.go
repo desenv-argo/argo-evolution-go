@@ -72,6 +72,12 @@ type WhatsmeowService interface {
 	ConfirmPasskey(instanceId string) error
 }
 
+// MessageLifecycleRecorder keeps Argo observability additive: the transport
+// depends only on this narrow contract and remains unaware of Argo models.
+type MessageLifecycleRecorder interface {
+	RecordReceipt(ctx context.Context, instanceID string, providerMessageIDs []string, state string, occurredAt time.Time) error
+}
+
 type clientVersion struct {
 	Major int
 	Minor int
@@ -82,6 +88,7 @@ type whatsmeowService struct {
 	instanceRepository instance_repository.InstanceRepository
 	authDB             *sql.DB
 	messageRepository  message_repository.MessageRepository
+	lifecycleRecorder  MessageLifecycleRecorder
 	labelRepository    label_repository.LabelRepository
 	pollService        poll_service.PollService // NOVO: Serviço de enquetes
 	config             *config.Config
@@ -117,6 +124,7 @@ type MyClient struct {
 	websocketEnable    string
 	instanceRepository instance_repository.InstanceRepository
 	messageRepository  message_repository.MessageRepository
+	lifecycleRecorder  MessageLifecycleRecorder
 	labelRepository    label_repository.LabelRepository
 	pollService        poll_service.PollService // NOVO: Serviço de enquetes
 	clientPointer      map[string]*whatsmeow.Client
@@ -147,6 +155,17 @@ func (mycli *MyClient) persistMessageAsync(message message_model.Message) {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to persist message %s: %v", mycli.userID, message.MessageID, err)
 		}
 	}()
+}
+
+func (mycli *MyClient) recordLifecycleReceipt(messageIDs []string, state string, occurredAt time.Time) {
+	if mycli == nil || mycli.lifecycleRecorder == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := mycli.lifecycleRecorder.RecordReceipt(ctx, mycli.userID, messageIDs, state, occurredAt); err != nil {
+		mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to record %s lifecycle receipt: %v", mycli.userID, state, err)
+	}
 }
 
 type ClientData struct {
@@ -530,6 +549,7 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 		websocketEnable:    cd.Instance.WebSocketEnable,
 		instanceRepository: w.instanceRepository,
 		messageRepository:  w.messageRepository,
+		lifecycleRecorder:  w.lifecycleRecorder,
 		labelRepository:    w.labelRepository,
 		pollService:        w.pollService, // NOVO: Serviço de enquetes
 		userInfoCache:      w.userInfoCache,
@@ -1781,6 +1801,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Message was read by %s", mycli.userID, evt.SourceString())
 			if evt.Type == types.ReceiptTypeRead {
 				postMap["state"] = "Read"
+				mycli.recordLifecycleReceipt(evt.MessageIDs, "read", evt.Timestamp.UTC())
 				for _, v := range evt.MessageIDs {
 					messageKey := fmt.Sprintf("%s_%s_%s", mycli.userID, v, "Read")
 					if _, found := mycli.processedMessages.Get(messageKey); found {
@@ -1813,6 +1834,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			}
 		} else if evt.Type == types.ReceiptTypeDelivered {
 			postMap["state"] = "Delivered"
+			mycli.recordLifecycleReceipt(evt.MessageIDs, "delivered", evt.Timestamp.UTC())
 
 			for _, messageID := range evt.MessageIDs {
 				messageKey := fmt.Sprintf("%s_%s_%s", mycli.userID, messageID, "Delivered")
@@ -2883,6 +2905,7 @@ func NewWhatsmeowService(
 	instanceRepository instance_repository.InstanceRepository,
 	authDB *sql.DB,
 	messageRepository message_repository.MessageRepository,
+	lifecycleRecorder MessageLifecycleRecorder,
 	labelRepository label_repository.LabelRepository,
 	captureGate *analytics_settings.CaptureGate,
 	config *config.Config,
@@ -2904,6 +2927,7 @@ func NewWhatsmeowService(
 		instanceRepository: instanceRepository,
 		authDB:             authDB,
 		messageRepository:  messageRepository,
+		lifecycleRecorder:  lifecycleRecorder,
 		labelRepository:    labelRepository,
 		pollService:        pollSvc, // NOVO: Serviço de enquetes
 		config:             config,
