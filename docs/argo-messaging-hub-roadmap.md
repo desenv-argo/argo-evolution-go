@@ -47,12 +47,41 @@ O token da instância continua autorizando a operação no Evolution. A credenci
 
 ## Fase 2 — saúde das integrações
 
-- health checks controlados pelo plano de controle;
-- heartbeat assinado para aplicações que não expõem endpoint consultável;
+Status: heartbeat assinado e visão operacional implementados; polling ativo permanece pendente.
+
+- [ ] health checks controlados pelo plano de controle, após definição de allowlist;
+- [x] heartbeat assinado para aplicações que não expõem endpoint consultável;
 - estados separados para aplicação, autenticação, instância e fluxo de eventos;
-- histórico de disponibilidade e latência;
+- [x] histórico de sinais e latência;
 - alertas por falhas consecutivas, ausência de atividade e degradação;
 - proteção contra SSRF por allowlist de hosts e redes permitidas.
+
+### Contrato de heartbeat
+
+A aplicação envia o sinal no intervalo configurado em
+`expected_heartbeat_seconds`. A ausência por duas janelas muda o estado para
+`offline`. O endpoint exige a credencial própria da aplicação e não aceita a
+chave administrativa do Manager.
+
+```http
+POST /argo/v1/heartbeat
+Content-Type: application/json
+X-Argo-Application-Id: argo-erp
+X-Argo-Application-Key: <credencial-da-aplicacao>
+
+{
+  "status": "healthy",
+  "latency_ms": 42,
+  "version": "2026.08.18",
+  "component": "whatsapp-outbox",
+  "message": "optional diagnostic without sensitive data"
+}
+```
+
+Estados aceitos: `healthy`, `degraded` e `unhealthy`. A tela de Integrações
+mantém atividade autenticada da API e saúde declarada como sinais separados,
+evitando classificar uma aplicação como saudável apenas porque realizou um
+envio.
 
 ## Fase 3 — entrega confiável de eventos
 
