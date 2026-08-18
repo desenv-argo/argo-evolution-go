@@ -19,6 +19,60 @@ type Handler interface {
 	ListApplications(ctx *gin.Context)
 	ListAttempts(ctx *gin.Context)
 	AttemptSummary(ctx *gin.Context)
+	Heartbeat(ctx *gin.Context)
+	ListHeartbeats(ctx *gin.Context)
+	HealthSummary(ctx *gin.Context)
+}
+
+func (h *handler) Heartbeat(ctx *gin.Context) {
+	var input argo_service.HeartbeatInput
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	heartbeat, err := h.service.RecordHeartbeat(
+		ctx.Request.Context(),
+		ctx.GetHeader("X-Argo-Application-Id"),
+		ctx.GetHeader("X-Argo-Application-Key"),
+		input,
+	)
+	if err != nil {
+		if errors.Is(err, argo_service.ErrInvalidApplicationCredential) {
+			ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusAccepted, gin.H{"data": heartbeat})
+}
+
+func (h *handler) ListHeartbeats(ctx *gin.Context) {
+	filters, err := h.heartbeatFilters(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	heartbeats, err := h.service.ListHeartbeats(ctx.Request.Context(), filters)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list integration heartbeats"})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"data": heartbeats})
+}
+
+func (h *handler) HealthSummary(ctx *gin.Context) {
+	filters, err := h.heartbeatFilters(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	summary, err := h.service.HealthSummary(ctx.Request.Context(), filters)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load integration health"})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"data": summary})
 }
 
 type handler struct {
@@ -152,6 +206,48 @@ func (h *handler) filters(ctx *gin.Context) (argo_model.AttemptFilters, error) {
 		InstanceID:      ctx.Query("instanceId"),
 		Outcome:         outcome,
 		ErrorCode:       ctx.Query("errorCode"),
+		Limit:           limit,
+	}, nil
+}
+
+func (h *handler) heartbeatFilters(ctx *gin.Context) (argo_model.HeartbeatFilters, error) {
+	to := h.now().UTC()
+	from := to.Add(-7 * 24 * time.Hour)
+	var err error
+	if value := ctx.Query("from"); value != "" {
+		from, err = time.Parse(time.RFC3339, value)
+		if err != nil {
+			return argo_model.HeartbeatFilters{}, errors.New("from must use RFC3339 format")
+		}
+	}
+	if value := ctx.Query("to"); value != "" {
+		to, err = time.Parse(time.RFC3339, value)
+		if err != nil {
+			return argo_model.HeartbeatFilters{}, errors.New("to must use RFC3339 format")
+		}
+	}
+	if !from.Before(to) {
+		return argo_model.HeartbeatFilters{}, errors.New("from must be before to")
+	}
+	if to.Sub(from) > 366*24*time.Hour {
+		return argo_model.HeartbeatFilters{}, errors.New("period cannot exceed 366 days")
+	}
+	limit := 100
+	if value := ctx.Query("limit"); value != "" {
+		limit, err = strconv.Atoi(value)
+		if err != nil || limit < 1 || limit > 200 {
+			return argo_model.HeartbeatFilters{}, errors.New("limit must be between 1 and 200")
+		}
+	}
+	status := ctx.Query("status")
+	if status != "" && status != "healthy" && status != "degraded" && status != "unhealthy" {
+		return argo_model.HeartbeatFilters{}, errors.New("status must be healthy, degraded or unhealthy")
+	}
+	return argo_model.HeartbeatFilters{
+		From:            from,
+		To:              to,
+		ApplicationSlug: ctx.Query("application"),
+		Status:          status,
 		Limit:           limit,
 	}, nil
 }
