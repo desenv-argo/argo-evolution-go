@@ -101,6 +101,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.POST("/proxy/:instanceId", r.instanceHandler.SetProxy)
 			routes.DELETE("/proxy/:instanceId", r.instanceHandler.DeleteProxy)
 			routes.POST("/forcereconnect/:instanceId", r.instanceHandler.ForceReconnect)
+			routes.POST("/resume/:instanceId", r.instanceHandler.Resume)
 			routes.GET("/logs/:instanceId", r.instanceHandler.GetLogs)
 		}
 	}
