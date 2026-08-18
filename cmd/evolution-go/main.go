@@ -272,11 +272,47 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 }
 
 func migrate(db *gorm.DB) {
-	err := db.AutoMigrate(&instance_model.Instance{}, &message_model.Message{}, &label_model.Label{})
-
-	if err != nil {
+	if err := db.AutoMigrate(&instance_model.Instance{}, &message_model.Message{}, &label_model.Label{}); err != nil {
 		log.Fatal(err)
 	}
+	if err := migrateLegacyMessageJIDColumns(db); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// migrateLegacyMessageJIDColumns preserves messages written by the first
+// analytics release. GORM interpreted the JID acronym as J + ID and created
+// chat_j_id, sender_j_id and participant_j_id instead of the API column names.
+func migrateLegacyMessageJIDColumns(db *gorm.DB) error {
+	type columnMigration struct {
+		legacy string
+		target string
+	}
+
+	for _, migration := range []columnMigration{
+		{legacy: "chat_j_id", target: "chat_jid"},
+		{legacy: "sender_j_id", target: "sender_jid"},
+		{legacy: "participant_j_id", target: "participant_jid"},
+	} {
+		if !db.Migrator().HasColumn(&message_model.Message{}, migration.legacy) ||
+			!db.Migrator().HasColumn(&message_model.Message{}, migration.target) {
+			continue
+		}
+
+		query := fmt.Sprintf(
+			`UPDATE "messages" SET "%s" = "%s" WHERE ("%s" IS NULL OR "%s" = '') AND "%s" IS NOT NULL`,
+			migration.target,
+			migration.legacy,
+			migration.target,
+			migration.target,
+			migration.legacy,
+		)
+		if err := db.Exec(query).Error; err != nil {
+			return fmt.Errorf("backfill legacy message column %s: %w", migration.legacy, err)
+		}
+	}
+
+	return nil
 }
 
 func initAuthDB(config *config.Config) (*sql.DB, string, error) {
