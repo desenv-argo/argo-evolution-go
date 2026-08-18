@@ -242,4 +242,3 @@ func hashCredential(value string) string {
 func NewService(repository argo_repository.Repository) Service {
 	return &service{repository: repository}
 }
-
