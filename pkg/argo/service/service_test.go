@@ -58,6 +58,23 @@ func TestNormalizeHeartbeat(t *testing.T) {
 	}
 }
 
+func TestLifecycleBackfillOptionsAreBoundedAndSafeByDefault(t *testing.T) {
+	from := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
+	options, err := lifecycleBackfillOptions(LifecycleBackfillInput{From: from, To: from.Add(24 * time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.Limit != 1000 || options.Execute {
+		t.Fatalf("unexpected safe defaults: %#v", options)
+	}
+	if _, err := lifecycleBackfillOptions(LifecycleBackfillInput{From: from, To: from.Add(32 * 24 * time.Hour)}); err == nil {
+		t.Fatal("expected periods over 31 days to be rejected")
+	}
+	if _, err := lifecycleBackfillOptions(LifecycleBackfillInput{From: from, To: from.Add(time.Hour), Limit: 5001}); err == nil {
+		t.Fatal("expected limits over 5000 to be rejected")
+	}
+}
+
 func TestApplicationHealth(t *testing.T) {
 	now := time.Date(2026, time.August, 18, 18, 0, 0, 0, time.UTC)
 	recent := now.Add(-45 * time.Second)

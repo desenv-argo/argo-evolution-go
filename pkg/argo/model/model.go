@@ -192,6 +192,27 @@ type LifecycleFilters struct {
 	Limit             int
 }
 
+// LifecycleBackfillOptions bounds an explicit reconstruction of lifecycle
+// evidence that predates the Argo lifecycle table.
+type LifecycleBackfillOptions struct {
+	From    time.Time
+	To      time.Time
+	Limit   int
+	Execute bool
+}
+
+type LifecycleBackfillReport struct {
+	From            time.Time `json:"from"`
+	To              time.Time `json:"to"`
+	Execute         bool      `json:"execute"`
+	AttemptsScanned int       `json:"attempts_scanned"`
+	MessagesScanned int       `json:"messages_scanned"`
+	CandidateEvents int       `json:"candidate_events"`
+	ExistingEvents  int       `json:"existing_events"`
+	PendingEvents   int       `json:"pending_events"`
+	EventsCreated   int64     `json:"events_created"`
+}
+
 type LifecycleLatency struct {
 	P50 float64 `json:"p50_ms"`
 	P90 float64 `json:"p90_ms"`
