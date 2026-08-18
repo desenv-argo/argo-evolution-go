@@ -144,7 +144,7 @@ func (i *instanceRepository) GetAllConnectedInstancesByClientName(clientName str
 // instance offline even though its session remains valid for the next boot.
 func (i *instanceRepository) GetAllLinkedInstances() ([]*instance_model.Instance, error) {
 	var instances []*instance_model.Instance
-	err := i.db.Where("jid IS NOT NULL AND TRIM(jid) <> ''").Find(&instances).Error
+	err := i.db.Where("jid IS NOT NULL AND TRIM(jid) <> '' AND TRIM(COALESCE(events, '')) <> ''").Find(&instances).Error
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +154,7 @@ func (i *instanceRepository) GetAllLinkedInstances() ([]*instance_model.Instance
 
 func (i *instanceRepository) GetAllLinkedInstancesByClientName(clientName string) ([]*instance_model.Instance, error) {
 	var instances []*instance_model.Instance
-	err := i.db.Where("jid IS NOT NULL AND TRIM(jid) <> '' AND client_name = ?", clientName).Find(&instances).Error
+	err := i.db.Where("jid IS NOT NULL AND TRIM(jid) <> '' AND TRIM(COALESCE(events, '')) <> '' AND client_name = ?", clientName).Find(&instances).Error
 	if err != nil {
 		return nil, err
 	}
