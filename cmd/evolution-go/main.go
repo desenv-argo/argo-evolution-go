@@ -24,6 +24,11 @@ import (
 	analytics_handler "github.com/evolution-foundation/evolution-go/pkg/analytics/handler"
 	analytics_repository "github.com/evolution-foundation/evolution-go/pkg/analytics/repository"
 	analytics_settings "github.com/evolution-foundation/evolution-go/pkg/analytics/settings"
+	argo_handler "github.com/evolution-foundation/evolution-go/pkg/argo/handler"
+	argo_middleware "github.com/evolution-foundation/evolution-go/pkg/argo/middleware"
+	argo_model "github.com/evolution-foundation/evolution-go/pkg/argo/model"
+	argo_repository "github.com/evolution-foundation/evolution-go/pkg/argo/repository"
+	argo_service "github.com/evolution-foundation/evolution-go/pkg/argo/service"
 	call_handler "github.com/evolution-foundation/evolution-go/pkg/call/handler"
 	call_service "github.com/evolution-foundation/evolution-go/pkg/call/service"
 	chat_handler "github.com/evolution-foundation/evolution-go/pkg/chat/handler"
@@ -164,6 +169,8 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	instanceRepository := instance_repository.NewInstanceRepository(db)
 	messageRepository := message_repository.NewMessageRepository(db)
 	analyticsRepository := analytics_repository.NewAnalyticsRepository(db)
+	argoRepository := argo_repository.NewRepository(db)
+	argoService := argo_service.NewService(argoRepository)
 	captureGate, err := analytics_settings.NewCaptureGate(db, config.DatabaseSaveMessages)
 	if err != nil {
 		log.Fatalf("failed to initialize analytics settings: %v", err)
@@ -216,8 +223,8 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, Accept, Cache-Control, X-Requested-With, apikey, ApiKey")
-		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, Accept, Cache-Control, X-Requested-With, apikey, ApiKey, X-Argo-Application-Id, X-Argo-Application-Key, X-Correlation-Id, Idempotency-Key")
+		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length, X-Correlation-Id")
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(200)
 			return
@@ -249,6 +256,8 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		pollHandler,
 		server_handler.NewServerHandler(),
 		analytics_handler.NewAnalyticsHandler(analyticsRepository, captureGate),
+		argo_handler.NewHandler(argoService),
+		argo_middleware.NewAttemptTracker(argoService),
 	).AssignRoutes(r)
 
 	if config.ConnectOnStartup {
@@ -272,7 +281,13 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 }
 
 func migrate(db *gorm.DB) {
-	if err := db.AutoMigrate(&instance_model.Instance{}, &message_model.Message{}, &label_model.Label{}); err != nil {
+	if err := db.AutoMigrate(
+		&instance_model.Instance{},
+		&message_model.Message{},
+		&label_model.Label{},
+		&argo_model.Application{},
+		&argo_model.MessageAttempt{},
+	); err != nil {
 		log.Fatal(err)
 	}
 	if err := migrateLegacyMessageJIDColumns(db); err != nil {
