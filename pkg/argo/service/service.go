@@ -20,6 +20,8 @@ import (
 
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,98}[a-z0-9]$`)
 
+var ErrInvalidApplicationCredential = errors.New("invalid application credential")
+
 type ApplicationInput struct {
 	Slug                     string `json:"slug"`
 	Name                     string `json:"name"`
@@ -42,6 +44,14 @@ type Identity struct {
 	Verified        bool
 }
 
+type HeartbeatInput struct {
+	Status    string `json:"status"`
+	LatencyMS int64  `json:"latency_ms"`
+	Version   string `json:"version"`
+	Component string `json:"component"`
+	Message   string `json:"message"`
+}
+
 type Service interface {
 	CreateApplication(ctx context.Context, input ApplicationInput) (*ApplicationCredential, error)
 	UpdateApplication(ctx context.Context, id string, input ApplicationInput) (*argo_model.Application, error)
@@ -51,10 +61,14 @@ type Service interface {
 	RecordAttempt(ctx context.Context, attempt *argo_model.MessageAttempt) error
 	ListAttempts(ctx context.Context, filters argo_model.AttemptFilters) ([]argo_model.MessageAttempt, error)
 	AttemptSummary(ctx context.Context, filters argo_model.AttemptFilters) (*argo_model.AttemptSummary, error)
+	RecordHeartbeat(ctx context.Context, slug, credential string, input HeartbeatInput) (*argo_model.IntegrationHeartbeat, error)
+	ListHeartbeats(ctx context.Context, filters argo_model.HeartbeatFilters) ([]argo_model.IntegrationHeartbeat, error)
+	HealthSummary(ctx context.Context, filters argo_model.HeartbeatFilters) (*argo_model.HealthSummary, error)
 }
 
 type service struct {
 	repository argo_repository.Repository
+	now        func() time.Time
 }
 
 func (s *service) CreateApplication(ctx context.Context, input ApplicationInput) (*ApplicationCredential, error) {
@@ -141,7 +155,15 @@ func (s *service) RotateCredential(ctx context.Context, id string) (*Application
 }
 
 func (s *service) ListApplications(ctx context.Context) ([]argo_model.Application, error) {
-	return s.repository.ListApplications(ctx)
+	applications, err := s.repository.ListApplications(ctx)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now().UTC()
+	for index := range applications {
+		applications[index].HealthState, applications[index].HeartbeatAgeSeconds = applicationHealth(&applications[index], now)
+	}
+	return applications, nil
 }
 
 func (s *service) Identify(ctx context.Context, rawSlug, credential string) Identity {
@@ -173,6 +195,100 @@ func (s *service) ListAttempts(ctx context.Context, filters argo_model.AttemptFi
 
 func (s *service) AttemptSummary(ctx context.Context, filters argo_model.AttemptFilters) (*argo_model.AttemptSummary, error) {
 	return s.repository.AttemptSummary(ctx, filters)
+}
+
+func (s *service) RecordHeartbeat(ctx context.Context, slug, credential string, input HeartbeatInput) (*argo_model.IntegrationHeartbeat, error) {
+	identity := s.Identify(ctx, slug, credential)
+	if !identity.Verified || identity.ApplicationID == nil {
+		return nil, ErrInvalidApplicationCredential
+	}
+	status := strings.ToLower(strings.TrimSpace(input.Status))
+	if status == "" {
+		status = "healthy"
+	}
+	if status != "healthy" && status != "degraded" && status != "unhealthy" {
+		return nil, errors.New("status must be healthy, degraded or unhealthy")
+	}
+	if input.LatencyMS < 0 || input.LatencyMS > int64((10*time.Minute).Milliseconds()) {
+		return nil, errors.New("latency_ms must be between 0 and 600000")
+	}
+	heartbeat := &argo_model.IntegrationHeartbeat{
+		ApplicationID: *identity.ApplicationID,
+		Status:        status,
+		LatencyMS:     input.LatencyMS,
+		Version:       cleanValue(input.Version, 80),
+		Component:     cleanValue(input.Component, 100),
+		Message:       cleanValue(input.Message, 500),
+		ReceivedAt:    s.now().UTC(),
+	}
+	if err := s.repository.RecordHeartbeat(ctx, heartbeat); err != nil {
+		return nil, err
+	}
+	return heartbeat, nil
+}
+
+func (s *service) ListHeartbeats(ctx context.Context, filters argo_model.HeartbeatFilters) ([]argo_model.IntegrationHeartbeat, error) {
+	return s.repository.ListHeartbeats(ctx, filters)
+}
+
+func (s *service) HealthSummary(ctx context.Context, filters argo_model.HeartbeatFilters) (*argo_model.HealthSummary, error) {
+	applications, err := s.ListApplications(ctx)
+	if err != nil {
+		return nil, err
+	}
+	summary := &argo_model.HealthSummary{From: filters.From, To: filters.To}
+	for index := range applications {
+		application := &applications[index]
+		if !application.Active || (filters.ApplicationSlug != "" && application.Slug != filters.ApplicationSlug) {
+			continue
+		}
+		summary.Applications++
+		switch application.HealthState {
+		case "healthy":
+			summary.Healthy++
+		case "degraded":
+			summary.Degraded++
+		case "offline":
+			summary.Offline++
+		default:
+			summary.Unknown++
+		}
+	}
+	summary.HeartbeatEvents, summary.UnhealthyEvents, summary.AverageLatencyMS, err = s.repository.HeartbeatMetrics(ctx, filters)
+	if err != nil {
+		return nil, err
+	}
+	return summary, nil
+}
+
+func applicationHealth(application *argo_model.Application, now time.Time) (string, int64) {
+	if !application.Active {
+		return "disabled", 0
+	}
+	if application.LastHeartbeatAt == nil {
+		return "unknown", 0
+	}
+	age := now.Sub(application.LastHeartbeatAt.UTC())
+	if age < 0 {
+		age = 0
+	}
+	ageSeconds := int64(age.Seconds())
+	expected := time.Duration(normalizeHeartbeat(application.ExpectedHeartbeatSeconds)) * time.Second
+	if age > 2*expected {
+		return "offline", ageSeconds
+	}
+	if application.LastHeartbeatStatus != "healthy" {
+		return "degraded", ageSeconds
+	}
+	return "healthy", ageSeconds
+}
+
+func cleanValue(value string, limit int) string {
+	value = strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(value, "\r", " "), "\n", " "))
+	if len(value) > limit {
+		value = value[:limit]
+	}
+	return value
 }
 
 func validateInput(input ApplicationInput, creating bool) error {
@@ -240,5 +356,5 @@ func hashCredential(value string) string {
 }
 
 func NewService(repository argo_repository.Repository) Service {
-	return &service{repository: repository}
+	return &service{repository: repository, now: time.Now}
 }
