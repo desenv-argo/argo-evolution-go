@@ -10,11 +10,11 @@ import (
 
 type Message struct {
 	Id              string          `json:"id" gorm:"type:uuid;primaryKey"`
-	InstanceID      string          `json:"instance_id" gorm:"type:uuid;index:idx_messages_instance_sent_at,priority:1;index:idx_messages_conversation,priority:1;uniqueIndex:idx_messages_instance_message,priority:1"`
+	InstanceID      string          `json:"instance_id" gorm:"type:uuid;index:idx_messages_instance_sent_at,priority:1;index:idx_messages_chat_lookup,priority:1;uniqueIndex:idx_messages_instance_message,priority:1"`
 	MessageID       string          `json:"message_id" gorm:"unique;uniqueIndex:idx_messages_instance_message,priority:2"`
-	ChatJID         string          `json:"chat_jid" gorm:"index:idx_messages_conversation,priority:2;size:191"`
-	SenderJID       string          `json:"sender_jid,omitempty" gorm:"size:191"`
-	ParticipantJID  string          `json:"participant_jid,omitempty" gorm:"size:191"`
+	ChatJID         string          `json:"chat_jid" gorm:"column:chat_jid;index:idx_messages_chat_lookup,priority:2;size:191"`
+	SenderJID       string          `json:"sender_jid,omitempty" gorm:"column:sender_jid;size:191"`
+	ParticipantJID  string          `json:"participant_jid,omitempty" gorm:"column:participant_jid;size:191"`
 	PushName        string          `json:"push_name,omitempty"`
 	Direction       string          `json:"direction" gorm:"size:16"`
 	FromMe          bool            `json:"from_me"`
