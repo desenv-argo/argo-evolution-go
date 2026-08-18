@@ -639,9 +639,10 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 				go mycli.service.SendToGlobalQueues(postMap["event"].(string), values, mycli.userID)
 			}
 
-			// restart client
-			w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Restarting client", cd.Instance.Id)
-			w.StartClient(cd)
+			// The lifecycle coordinator (ReconnectClient/StartInstance) owns any
+			// restart. Restarting recursively here races with that coordinator and
+			// can create two clients for the same persisted session.
+			w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Client runtime stopped", cd.Instance.Id)
 			return
 		default:
 			time.Sleep(1000 * time.Millisecond)
