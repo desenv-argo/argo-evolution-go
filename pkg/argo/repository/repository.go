@@ -54,7 +54,7 @@ func (r *repository) ListHeartbeats(ctx context.Context, filters argo_model.Hear
 
 func (r *repository) HeartbeatMetrics(ctx context.Context, filters argo_model.HeartbeatFilters) (int64, int64, float64, error) {
 	var aggregate struct {
-		Events           int64
+		Events          int64
 		UnhealthyEvents int64
 		AverageLatency  float64
 	}
