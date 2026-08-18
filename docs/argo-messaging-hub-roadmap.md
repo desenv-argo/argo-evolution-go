@@ -18,7 +18,7 @@ O Evolution Go permanece responsável pelo transporte WhatsApp. Os módulos sob 
 
 ## Fase 1 — identidade e rastreabilidade
 
-Status: em implementação.
+Status: fundação implementada no PR #12.
 
 - catálogo administrativo de aplicações;
 - credencial própria por aplicação, retornada apenas na criação ou rotação;
@@ -29,6 +29,8 @@ Status: em implementação.
 - persistência de todas as tentativas em `/send/*`, inclusive 4xx e 5xx;
 - taxonomia inicial de erros;
 - resumo operacional e consulta de tentativas por aplicação, instância e período;
+- tela enterprise de Integrações no Manager para catálogo, rotação de credencial,
+  atividade recente, métricas, filtros e drill-down de erros;
 - compatibilidade com consumidores legados, identificados como `legacy/unknown`.
 
 ### Contrato do consumidor
@@ -112,4 +114,3 @@ O token da instância continua autorizando a operação no Evolution. A credenci
 - identidades não verificadas;
 - disponibilidade de aplicação, integração e instância;
 - sucesso, atraso e backlog de webhooks.
-
