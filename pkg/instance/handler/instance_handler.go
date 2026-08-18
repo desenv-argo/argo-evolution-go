@@ -17,6 +17,7 @@ type InstanceHandler interface {
 	Connect(ctx *gin.Context)
 	Reconnect(ctx *gin.Context)
 	Resume(ctx *gin.Context)
+	Health(ctx *gin.Context)
 	Disconnect(ctx *gin.Context)
 	Logout(ctx *gin.Context)
 	Delete(ctx *gin.Context)
@@ -193,12 +194,38 @@ func (i *instanceHandler) Resume(ctx *gin.Context) {
 		return
 	}
 
-	if err := i.instanceService.Resume(instanceId); err != nil {
+	health, err := i.instanceService.Resume(instanceId)
+	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{"message": "instance resume started"})
+	ctx.JSON(http.StatusOK, gin.H{"message": "instance resume completed", "data": health})
+}
+
+// Health returns live transport, authentication and optional functional state.
+// @Summary Check instance health
+// @Description Checks the live runtime and optionally performs a read-only WhatsApp round trip
+// @Tags Instance
+// @Produce json
+// @Param instanceId path string true "Instance Id"
+// @Param probe query bool false "Perform functional WhatsApp probe"
+// @Success 200 {object} gin.H "Instance health"
+// @Router /instance/health/{instanceId} [get]
+func (i *instanceHandler) Health(ctx *gin.Context) {
+	instanceId := ctx.Param("instanceId")
+	if instanceId == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "instanceId is required"})
+		return
+	}
+
+	health, err := i.instanceService.Health(instanceId, ctx.Query("probe") == "true")
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": health})
 }
 
 // Disconnect from instance
