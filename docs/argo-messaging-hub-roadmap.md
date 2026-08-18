@@ -137,9 +137,10 @@ continuam no funil como `legacy/unknown`.
 ### Captura de conversas e anexos
 
 - mensagens recuperadas por `HistorySync` também alimentam a visão de conversas, cobrindo envios feitos por outros dispositivos e períodos offline;
-- documentos recebidos são armazenados em `argo_message_media` e servidos somente pela API administrativa;
-- o Manager exibe nome, tamanho e ações de visualização e download;
+- documentos e demais mídias recebidas são armazenados em `argo_message_media` e servidos somente pela API administrativa;
+- o Manager oferece prévia autenticada sob demanda para imagens, áudio e vídeo, além de visualização e download de documentos;
 - `ARGO_MESSAGE_MEDIA_MAX_BYTES` limita cada anexo capturado (padrão: 25 MiB; máximo: 100 MiB).
+- a retenção automática remove anexos antigos em lotes; `ARGO_MESSAGE_MEDIA_RETENTION_DAYS` define a janela (padrão: 30 dias), `ARGO_MESSAGE_MEDIA_CLEANUP_SECONDS` o intervalo (padrão: 6 horas) e `ARGO_MESSAGE_MEDIA_CLEANUP_BATCH` o lote (padrão: 500).
 
 - dashboard por aplicação e ambiente;
 - consumo por aplicação e instância;

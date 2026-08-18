@@ -28,6 +28,7 @@ type Repository interface {
 	BackfillLifecycle(ctx context.Context, options argo_model.LifecycleBackfillOptions) (*argo_model.LifecycleBackfillReport, error)
 	SaveMessageMedia(ctx context.Context, media *argo_model.MessageMedia) error
 	GetMessageMedia(ctx context.Context, instanceID, providerMessageID string) (*argo_model.MessageMedia, error)
+	DeleteMessageMediaBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error)
 }
 
 func (r *repository) RecordHeartbeat(ctx context.Context, heartbeat *argo_model.IntegrationHeartbeat) error {

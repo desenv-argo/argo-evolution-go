@@ -83,6 +83,7 @@ type Service interface {
 	BackfillLifecycle(ctx context.Context, input LifecycleBackfillInput) (*argo_model.LifecycleBackfillReport, error)
 	StoreMessageMedia(ctx context.Context, instanceID, providerMessageID, fileName, mimeType string, content []byte) error
 	GetMessageMedia(ctx context.Context, instanceID, providerMessageID string) (*argo_model.MessageMedia, error)
+	DeleteMessageMediaBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error)
 }
 
 type service struct {
@@ -123,6 +124,10 @@ func (s *service) GetMessageMedia(ctx context.Context, instanceID, providerMessa
 		return nil, errors.New("instanceId and messageId are required")
 	}
 	return s.repository.GetMessageMedia(ctx, strings.TrimSpace(instanceID), strings.TrimSpace(providerMessageID))
+}
+
+func (s *service) DeleteMessageMediaBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error) {
+	return s.repository.DeleteMessageMediaBefore(ctx, cutoff.UTC(), limit)
 }
 
 func sanitizeMediaFileName(value, fallback string) string {
