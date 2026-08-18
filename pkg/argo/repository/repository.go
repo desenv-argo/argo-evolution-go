@@ -17,6 +17,53 @@ type Repository interface {
 	RecordAttempt(ctx context.Context, attempt *argo_model.MessageAttempt) error
 	ListAttempts(ctx context.Context, filters argo_model.AttemptFilters) ([]argo_model.MessageAttempt, error)
 	AttemptSummary(ctx context.Context, filters argo_model.AttemptFilters) (*argo_model.AttemptSummary, error)
+	RecordHeartbeat(ctx context.Context, heartbeat *argo_model.IntegrationHeartbeat) error
+	ListHeartbeats(ctx context.Context, filters argo_model.HeartbeatFilters) ([]argo_model.IntegrationHeartbeat, error)
+	HeartbeatMetrics(ctx context.Context, filters argo_model.HeartbeatFilters) (int64, int64, float64, error)
+}
+
+func (r *repository) RecordHeartbeat(ctx context.Context, heartbeat *argo_model.IntegrationHeartbeat) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(heartbeat).Error; err != nil {
+			return err
+		}
+		return tx.Model(&argo_model.Application{}).
+			Where("id = ?", heartbeat.ApplicationID).
+			Updates(map[string]interface{}{
+				"last_heartbeat_at":         heartbeat.ReceivedAt,
+				"last_heartbeat_status":     heartbeat.Status,
+				"last_heartbeat_latency_ms": heartbeat.LatencyMS,
+				"last_heartbeat_version":    heartbeat.Version,
+			}).Error
+	})
+}
+
+func (r *repository) ListHeartbeats(ctx context.Context, filters argo_model.HeartbeatFilters) ([]argo_model.IntegrationHeartbeat, error) {
+	limit := filters.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+	heartbeats := make([]argo_model.IntegrationHeartbeat, 0)
+	err := r.scopedHeartbeats(ctx, filters).
+		Preload("Application").
+		Order("received_at DESC, id DESC").
+		Limit(limit).
+		Find(&heartbeats).Error
+	return heartbeats, err
+}
+
+func (r *repository) HeartbeatMetrics(ctx context.Context, filters argo_model.HeartbeatFilters) (int64, int64, float64, error) {
+	var aggregate struct {
+		Events          int64
+		UnhealthyEvents int64
+		AverageLatency  float64
+	}
+	err := r.scopedHeartbeats(ctx, filters).Select(`
+		COUNT(*) AS events,
+		COALESCE(SUM(CASE WHEN status <> 'healthy' THEN 1 ELSE 0 END), 0) AS unhealthy_events,
+		COALESCE(AVG(latency_ms), 0) AS average_latency
+	`).Scan(&aggregate).Error
+	return aggregate.Events, aggregate.UnhealthyEvents, aggregate.AverageLatency, err
 }
 
 type repository struct {
@@ -137,6 +184,24 @@ func (r *repository) scopedAttempts(ctx context.Context, filters argo_model.Atte
 	}
 	if filters.ErrorCode != "" {
 		query = query.Where("error_code = ?", filters.ErrorCode)
+	}
+	return query
+}
+
+func (r *repository) scopedHeartbeats(ctx context.Context, filters argo_model.HeartbeatFilters) *gorm.DB {
+	query := r.db.WithContext(ctx).Model(&argo_model.IntegrationHeartbeat{})
+	if !filters.From.IsZero() {
+		query = query.Where("received_at >= ?", filters.From)
+	}
+	if !filters.To.IsZero() {
+		query = query.Where("received_at <= ?", filters.To)
+	}
+	if filters.ApplicationSlug != "" {
+		query = query.Joins("JOIN argo_applications ON argo_applications.id = argo_integration_heartbeats.application_id").
+			Where("argo_applications.slug = ?", filters.ApplicationSlug)
+	}
+	if filters.Status != "" {
+		query = query.Where("argo_integration_heartbeats.status = ?", filters.Status)
 	}
 	return query
 }

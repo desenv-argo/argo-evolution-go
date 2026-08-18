@@ -94,6 +94,10 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 		}
 	}
 
+	// Integration heartbeats authenticate with the application's own Argo
+	// credential, so they intentionally do not depend on the Manager admin key.
+	eng.POST("/argo/v1/heartbeat", r.argoHandler.Heartbeat)
+
 	routes = eng.Group("/argo/v1")
 	{
 		routes.Use(r.authMiddleware.AuthAdmin)
@@ -104,6 +108,8 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.POST("/applications/:applicationId/rotate-credential", r.argoHandler.RotateCredential)
 			routes.GET("/operations/attempts", r.argoHandler.ListAttempts)
 			routes.GET("/operations/summary", r.argoHandler.AttemptSummary)
+			routes.GET("/health/heartbeats", r.argoHandler.ListHeartbeats)
+			routes.GET("/health/summary", r.argoHandler.HealthSummary)
 		}
 	}
 

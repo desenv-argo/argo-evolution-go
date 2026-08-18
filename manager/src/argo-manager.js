@@ -145,6 +145,10 @@ const styles = String.raw`
   .status-pill::before { content: ""; width: 5px; height: 5px; border-radius: 999px; background: currentColor; }
   .status-pill.active { border-color: rgba(0,229,155,.2); background: rgba(0,229,155,.07); color: #57ddb0; }
   .status-pill.inactive { border-color: rgba(255,93,115,.2); background: rgba(255,93,115,.07); color: #ff8293; }
+  .status-pill.healthy { border-color: rgba(0,229,155,.2); background: rgba(0,229,155,.07); color: #57ddb0; }
+  .status-pill.degraded { border-color: rgba(245,181,74,.25); background: rgba(245,181,74,.07); color: #e6bd72; }
+  .status-pill.offline { border-color: rgba(255,93,115,.2); background: rgba(255,93,115,.07); color: #ff8293; }
+  .status-pill.unknown, .status-pill.disabled { color: #8d9891; }
   .operations-toolbar { flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 11px 14px; border-bottom: 1px solid var(--argo-border); }
   .operation-filters { display: flex; flex-wrap: wrap; gap: 7px; }
   .operation-filters select { min-width: 120px; }
@@ -355,6 +359,7 @@ class ArgoDashboard extends ArgoBaseElement {
     this.instances = [];
     this.health = new Map();
     this.summary = null;
+    this.healthSummary = null;
     this.render();
     this.load();
   }
@@ -717,12 +722,14 @@ class ArgoIntegrations extends ArgoBaseElement {
     this.setError("");
     try {
       const filters = this.operationFilters();
-      const [summary, attempts] = await Promise.all([
+      const [summary, attempts, healthSummary] = await Promise.all([
         request("/argo/v1/operations/summary", filters, signal),
         request("/argo/v1/operations/attempts", filters, signal),
+        request("/argo/v1/health/summary", filters, signal),
       ]);
       this.summary = summary || {};
       this.attempts = Array.isArray(attempts) ? attempts : [];
+      this.healthSummary = healthSummary || {};
       this.renderSummary();
       this.renderErrors();
       this.renderAttempts();
@@ -739,13 +746,14 @@ class ArgoIntegrations extends ArgoBaseElement {
 
   renderSummary() {
     const enabled = this.applications.filter((item) => item.active).length;
-    const recent = this.applications.filter((item) => this.hasRecentActivity(item)).length;
+    const healthy = Number(this.healthSummary?.healthy || 0);
+    const unhealthy = Number(this.healthSummary?.degraded || 0) + Number(this.healthSummary?.offline || 0);
     const total = Number(this.summary?.total || 0);
     const failed = Number(this.summary?.failed || 0);
     const failureRate = total ? (failed / total) * 100 : 0;
     const cards = [
       ["Aplicações", this.applications.length, `${enabled} habilitadas`, ""],
-      ["Atividade recente", recent, "Baseada em chamadas autenticadas", recent ? "good" : ""],
+      ["Saúde das integrações", healthy, unhealthy ? `${unhealthy} requerem atenção` : `${this.healthSummary?.unknown || 0} aguardando heartbeat`, unhealthy ? "bad" : healthy ? "good" : ""],
       ["Tentativas", total, `${numberFormatter.format(this.summary?.succeeded || 0)} aceitas pela API`, ""],
       ["Taxa de falha", `${percentFormatter.format(failureRate)}%`, `${numberFormatter.format(failed)} falhas`, failed ? "bad" : "good"],
     ];
@@ -780,16 +788,20 @@ class ArgoIntegrations extends ArgoBaseElement {
       const top = element("div", "application-top");
       const title = element("div", "application-title");
       title.append(element("div", "application-name", application.name), element("div", "application-slug", application.slug));
-      const active = element("span", `status-pill ${application.active ? "active" : "inactive"}`, application.active ? "Habilitada" : "Desabilitada");
-      top.append(title, active);
+      const states = { healthy: "Saudável", degraded: "Degradada", offline: "Sem heartbeat", unknown: "Aguardando heartbeat", disabled: "Desabilitada" };
+      const state = application.health_state || (application.active ? "unknown" : "disabled");
+      const health = element("span", `status-pill ${state}`, states[state] || state);
+      top.append(title, health);
       const meta = element("div", "application-meta");
       const values = [
         ["Ambiente", application.environment || "production"],
         ["Responsável", application.owner || "Não informado"],
         ["Aplicação", application.base_url || "URL não informada"],
         ["Health check", application.health_url || "Não configurado"],
-        ["Última chamada", relativeTime(application.last_seen_at)],
-        ["Atividade", this.hasRecentActivity(application) ? "Recente e autenticada" : application.last_seen_at ? "Fora da janela" : "Ainda não observada"],
+        ["Último heartbeat", relativeTime(application.last_heartbeat_at)],
+        ["Sinal reportado", application.last_heartbeat_at ? `${application.last_heartbeat_status || "healthy"} · ${numberFormatter.format(application.last_heartbeat_latency_ms || 0)} ms` : "Ainda não recebido"],
+        ["Versão", application.last_heartbeat_version || "Não informada"],
+        ["Última chamada API", relativeTime(application.last_seen_at)],
       ];
       for (const [label, value] of values) {
         const item = element("div");
