@@ -59,16 +59,16 @@ func (r *repository) ListHeartbeats(ctx context.Context, filters argo_model.Hear
 
 func (r *repository) HeartbeatMetrics(ctx context.Context, filters argo_model.HeartbeatFilters) (int64, int64, float64, error) {
 	var aggregate struct {
-		Events          int64
-		UnhealthyEvents int64
-		AverageLatency  float64
+		HeartbeatEvents  int64   `gorm:"column:heartbeat_events"`
+		UnhealthyEvents  int64   `gorm:"column:unhealthy_events"`
+		AverageLatencyMS float64 `gorm:"column:average_latency_ms"`
 	}
 	err := r.scopedHeartbeats(ctx, filters).Select(`
-		COUNT(*) AS events,
-		COALESCE(SUM(CASE WHEN status <> 'healthy' THEN 1 ELSE 0 END), 0) AS unhealthy_events,
-		COALESCE(AVG(latency_ms), 0) AS average_latency
+		COUNT(*) AS heartbeat_events,
+		COALESCE(SUM(CASE WHEN argo_integration_heartbeats.status <> 'healthy' THEN 1 ELSE 0 END), 0) AS unhealthy_events,
+		CAST(COALESCE(AVG(argo_integration_heartbeats.latency_ms), 0) AS DOUBLE PRECISION) AS average_latency_ms
 	`).Scan(&aggregate).Error
-	return aggregate.Events, aggregate.UnhealthyEvents, aggregate.AverageLatency, err
+	return aggregate.HeartbeatEvents, aggregate.UnhealthyEvents, aggregate.AverageLatencyMS, err
 }
 
 type repository struct {
