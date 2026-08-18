@@ -40,4 +40,3 @@ func TestCleanHeader(t *testing.T) {
 		t.Fatalf("cleanHeader() = %q", got)
 	}
 }
-
