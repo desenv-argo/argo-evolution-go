@@ -35,6 +35,27 @@ const replacements = [
       'function pL(){return m.jsxs("div",{className:"p-6",children:[m.jsx("h1",{className:"mb-4 text-2xl font-bold text-gray-900",children:"Mensagens"}),m.jsx("p",{className:"text-gray-600",children:"Messages sending will be implemented here..."})]})}',
     target: 'function pL(){return m.jsx("argo-conversations",{})}',
   },
+  {
+    name: "manager navigation",
+    marker: '{to:"/manager/integrations",label:"Integrações",icon:mA}',
+    source: 'const mj=[{to:"/manager",label:"Dashboard",icon:HR},{to:"/manager/instances",label:"Instâncias",icon:mA}];',
+    target:
+      'const mj=[{to:"/manager",label:"Dashboard",icon:HR},{to:"/manager/instances",label:"Instâncias",icon:mA},{to:"/manager/integrations",label:"Integrações",icon:mA},{to:"/manager/messages",label:"Conversas",icon:HR}];',
+  },
+  {
+    name: "integrations page",
+    marker: 'function ArgoIntegrationsPage(){return m.jsx("argo-integrations",{})}',
+    source: 'function pL(){return m.jsx("argo-conversations",{})}function gL()',
+    target:
+      'function pL(){return m.jsx("argo-conversations",{})}function ArgoIntegrationsPage(){return m.jsx("argo-integrations",{})}function gL()',
+  },
+  {
+    name: "integrations route",
+    marker: 'path:"integrations",element:m.jsx(ArgoIntegrationsPage,{})',
+    source: 'm.jsx(jn,{path:"messages",element:m.jsx(pL,{})}),m.jsx(jn,{path:"events",element:m.jsx(gL,{})})',
+    target:
+      'm.jsx(jn,{path:"messages",element:m.jsx(pL,{})}),m.jsx(jn,{path:"integrations",element:m.jsx(ArgoIntegrationsPage,{})}),m.jsx(jn,{path:"events",element:m.jsx(gL,{})})',
+  },
 ];
 
 for (const replacement of replacements) {
