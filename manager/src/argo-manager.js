@@ -103,12 +103,14 @@ const styles = String.raw`
   .legend { display: flex; gap: 16px; color: var(--argo-muted); font-size: 11px; }
   .legend span::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 999px; background: var(--legend); }
   .instance-list { display: grid; gap: 9px; }
-  .instance-row { display: grid; grid-template-columns: 9px minmax(0,1fr) auto auto; align-items: center; gap: 11px; padding: 11px 12px; border: 1px solid rgba(148,163,184,.1); border-radius: 12px; background: rgba(9,20,38,.6); }
+  .instance-row { display: grid; grid-template-columns: 9px minmax(0,1fr) auto; align-items: center; gap: 11px; padding: 11px 12px; border: 1px solid rgba(148,163,184,.1); border-radius: 12px; background: rgba(9,20,38,.6); }
   .status-dot { width: 8px; height: 8px; border-radius: 999px; background: var(--argo-red); box-shadow: 0 0 12px currentColor; }
   .status-dot.connected { background: var(--argo-green); }
   .instance-name { overflow: hidden; font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
-  .instance-owner, .instance-state { color: var(--argo-muted); font-size: 11px; }
-  .instance-resume { min-height: 30px; padding: 0 9px; border-radius: 8px; font-size: 11px; }
+  .instance-owner, .instance-state, .instance-detail { color: var(--argo-muted); font-size: 11px; }
+  .instance-detail { margin-top: 3px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .instance-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
+  .instance-action { min-height: 30px; padding: 0 9px; border-radius: 8px; font-size: 11px; }
   .empty { min-height: 160px; justify-content: center; flex-direction: column; gap: 8px; color: var(--argo-muted); text-align: center; }
   .empty strong { color: var(--argo-text); }
   .skeleton { position: relative; overflow: hidden; background: rgba(148,163,184,.09); color: transparent; border-radius: 8px; }
@@ -271,6 +273,7 @@ class ArgoBaseElement extends HTMLElement {
 class ArgoDashboard extends ArgoBaseElement {
   connectedCallback() {
     this.instances = [];
+    this.health = new Map();
     this.summary = null;
     this.render();
     this.load();
@@ -318,12 +321,22 @@ class ArgoDashboard extends ArgoBaseElement {
     try {
       const instancesPayload = await request("/instance/all", {}, signal);
       this.instances = Array.isArray(instancesPayload) ? instancesPayload : [];
+      await this.loadHealth(signal);
       this.renderInstanceOptions();
       this.renderInstances();
       await this.loadSummary(signal);
     } catch (error) {
       if (error.name !== "AbortError") this.setError(error.message);
     }
+  }
+
+  async loadHealth(signal) {
+    const results = await Promise.allSettled(this.instances.map((instance) =>
+      request(`/instance/health/${encodeURIComponent(instance.id)}`, {}, signal)
+    ));
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled") this.health.set(this.instances[index].id, result.value);
+    });
   }
 
   async loadSummary(existingSignal) {
@@ -356,10 +369,17 @@ class ArgoDashboard extends ArgoBaseElement {
 
   renderMetrics() {
     const value = this.summary || {};
+    const liveConnected = this.instances.filter((instance) => {
+      const health = this.health.get(instance.id);
+      return health ? health.transport_connected && health.logged_in : instance.connected;
+    }).length;
+    const instanceTotal = this.instances.length || value.instances_total || 0;
+    const liveOffline = Math.max(instanceTotal - liveConnected, 0);
+    const liveRate = instanceTotal ? (liveConnected / instanceTotal) * 100 : 0;
     const cards = [
-      ["Instâncias", value.instances_total, "Total configurado", "◫", ""],
-      ["Conectadas", value.instances_connected, `${percentFormatter.format(value.connection_rate || 0)}% disponíveis`, "●", "good"],
-      ["Desconectadas", value.instances_offline, value.instances_offline ? "Requer acompanhamento" : "Tudo conectado", "!", value.instances_offline ? "bad" : "good"],
+      ["Instâncias", instanceTotal, "Total configurado", "◫", ""],
+      ["Conectadas", liveConnected, `${percentFormatter.format(liveRate)}% disponíveis`, "●", "good"],
+      ["Desconectadas", liveOffline, liveOffline ? "Requer acompanhamento" : "Tudo conectado", "!", liveOffline ? "bad" : "good"],
       ["Mensagens", value.messages_total, `${numberFormatter.format(value.inbound_messages || 0)} recebidas`, "↕", ""],
       ["Conversas ativas", value.active_conversations, "No periodo selecionado", "◎", ""],
       ["Contatos únicos", value.unique_contacts, "Conversas individuais", "♙", ""],
@@ -427,23 +447,57 @@ class ArgoDashboard extends ArgoBaseElement {
       target.replaceChildren(element("div", "empty", "Nenhuma instância cadastrada."));
       return;
     }
-    const sorted = [...this.instances].sort((a, b) => Number(a.connected) - Number(b.connected) || a.name.localeCompare(b.name));
+    const isLive = (instance) => {
+      const health = this.health.get(instance.id);
+      return health ? health.transport_connected && health.logged_in : instance.connected;
+    };
+    const labels = { operational: "Operacional", connected: "Conectada", degraded: "Degradada", reconnecting: "Reconectando", linked_offline: "Sessão offline", needs_pairing: "Requer QR" };
+    const sorted = [...this.instances].sort((a, b) => Number(isLive(a)) - Number(isLive(b)) || a.name.localeCompare(b.name));
     target.replaceChildren(...sorted.slice(0, 12).map((instance) => {
+      const health = this.health.get(instance.id);
+      const live = isLive(instance);
+      const state = health?.state || (live ? "connected" : "linked_offline");
+      const tone = state === "degraded" || state === "reconnecting" ? "warn" : live ? "good" : "bad";
       const row = element("div", "instance-row");
-      row.append(element("span", `status-dot ${instance.connected ? "connected" : ""}`));
+      const dot = element("span", `status-dot ${live ? "connected" : ""}`);
+      if (tone === "warn") dot.style.background = "var(--argo-amber)";
+      row.append(dot);
       const info = element("div");
       info.append(element("div", "instance-name", instance.name), element("div", "instance-owner", instance.jid ? instance.jid.split("@")[0] : "Sem número vinculado"));
-      row.append(info, element("span", `instance-state ${instance.connected ? "good" : "bad"}`, instance.connected ? "Conectada" : "Offline"));
-      if (!instance.connected && instance.jid) {
-        const resume = element("button", "button instance-resume", "Reconectar");
+      if (health?.detail) info.append(element("div", "instance-detail", health.probe_performed && health.probe_ok ? `${health.detail} (${health.latency_ms} ms)` : health.detail));
+      const actions = element("div", "instance-actions");
+      actions.append(element("span", `instance-state ${tone}`, labels[state] || "Offline"));
+      if (instance.jid) {
+        const test = element("button", "button instance-action", "Testar");
+        test.type = "button";
+        test.addEventListener("click", () => this.testInstance(instance, test));
+        actions.append(test);
+      }
+      if (!live && instance.jid) {
+        const resume = element("button", "button instance-action", "Reconectar");
         resume.type = "button";
         resume.addEventListener("click", () => this.resumeInstance(instance, resume));
-        row.append(resume);
-      } else {
-        row.append(element("span"));
+        actions.append(resume);
       }
+      row.append(info, actions);
       return row;
     }));
+  }
+
+  async testInstance(instance, button) {
+    button.disabled = true;
+    button.textContent = "Testando...";
+    this.setError("");
+    try {
+      const health = await request(`/instance/health/${encodeURIComponent(instance.id)}`, { probe: true });
+      this.health.set(instance.id, health);
+      this.renderInstances();
+      this.renderMetrics();
+    } catch (error) {
+      this.setError(error.message);
+      button.disabled = false;
+      button.textContent = "Testar";
+    }
   }
 
   async resumeInstance(instance, button) {
@@ -451,9 +505,10 @@ class ArgoDashboard extends ArgoBaseElement {
     button.textContent = "Reconectando...";
     this.setError("");
     try {
-      await request(`/instance/resume/${encodeURIComponent(instance.id)}`, {}, undefined, { method: "POST" });
-      await new Promise((resolve) => window.setTimeout(resolve, 4000));
-      await this.load();
+      const health = await request(`/instance/resume/${encodeURIComponent(instance.id)}`, {}, undefined, { method: "POST" });
+      this.health.set(instance.id, health);
+      this.renderInstances();
+      this.renderMetrics();
     } catch (error) {
       this.setError(error.message);
       button.disabled = false;
