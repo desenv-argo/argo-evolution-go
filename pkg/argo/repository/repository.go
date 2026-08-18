@@ -18,6 +18,7 @@ type Repository interface {
 	RecordAttempt(ctx context.Context, attempt *argo_model.MessageAttempt) error
 	ListAttempts(ctx context.Context, filters argo_model.AttemptFilters) ([]argo_model.MessageAttempt, error)
 	AttemptSummary(ctx context.Context, filters argo_model.AttemptFilters) (*argo_model.AttemptSummary, error)
+	GatewayUsage(ctx context.Context, filters argo_model.AttemptFilters) ([]argo_model.GatewayUsage, []argo_model.GatewayUsage, error)
 	RecordHeartbeat(ctx context.Context, heartbeat *argo_model.IntegrationHeartbeat) error
 	ListHeartbeats(ctx context.Context, filters argo_model.HeartbeatFilters) ([]argo_model.IntegrationHeartbeat, error)
 	HeartbeatMetrics(ctx context.Context, filters argo_model.HeartbeatFilters) (int64, int64, float64, error)
@@ -29,6 +30,35 @@ type Repository interface {
 	SaveMessageMedia(ctx context.Context, media *argo_model.MessageMedia) error
 	GetMessageMedia(ctx context.Context, instanceID, providerMessageID string) (*argo_model.MessageMedia, error)
 	DeleteMessageMediaBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error)
+}
+
+func (r *repository) GatewayUsage(ctx context.Context, filters argo_model.AttemptFilters) ([]argo_model.GatewayUsage, []argo_model.GatewayUsage, error) {
+	applications := make([]argo_model.GatewayUsage, 0)
+	if err := r.scopedAttempts(ctx, filters).Select(`
+		CASE WHEN identity_verified = TRUE AND application_slug <> '' THEN application_slug ELSE 'legacy/unknown' END AS key,
+		COUNT(*) AS total,
+		COALESCE(SUM(CASE WHEN outcome = 'succeeded' THEN 1 ELSE 0 END), 0) AS succeeded,
+		COALESCE(SUM(CASE WHEN outcome = 'failed' THEN 1 ELSE 0 END), 0) AS failed,
+		COALESCE(SUM(CASE WHEN identity_verified = FALSE THEN 1 ELSE 0 END), 0) AS unverified_identity,
+		COALESCE(AVG(duration_ms), 0) AS average_duration_ms,
+		MAX(completed_at) AS last_activity_at
+	`).Group("key").Order("total DESC").Scan(&applications).Error; err != nil {
+		return nil, nil, err
+	}
+
+	instances := make([]argo_model.GatewayUsage, 0)
+	if err := r.scopedAttempts(ctx, filters).Select(`
+		COALESCE(CAST(instance_id AS TEXT), 'unknown') AS key,
+		COUNT(*) AS total,
+		COALESCE(SUM(CASE WHEN outcome = 'succeeded' THEN 1 ELSE 0 END), 0) AS succeeded,
+		COALESCE(SUM(CASE WHEN outcome = 'failed' THEN 1 ELSE 0 END), 0) AS failed,
+		COALESCE(SUM(CASE WHEN identity_verified = FALSE THEN 1 ELSE 0 END), 0) AS unverified_identity,
+		COALESCE(AVG(duration_ms), 0) AS average_duration_ms,
+		MAX(completed_at) AS last_activity_at
+	`).Group("instance_id").Order("total DESC").Scan(&instances).Error; err != nil {
+		return nil, nil, err
+	}
+	return applications, instances, nil
 }
 
 func (r *repository) RecordHeartbeat(ctx context.Context, heartbeat *argo_model.IntegrationHeartbeat) error {

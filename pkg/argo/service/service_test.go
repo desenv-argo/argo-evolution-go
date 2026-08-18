@@ -101,6 +101,29 @@ func TestMessageMediaMaxBytesUsesSafeBounds(t *testing.T) {
 	}
 }
 
+func TestGatewayOperationalState(t *testing.T) {
+	tests := []struct {
+		name      string
+		attempts  argo_model.AttemptSummary
+		lifecycle argo_model.LifecycleSummary
+		want      string
+	}{
+		{name: "healthy", attempts: argo_model.AttemptSummary{Total: 100, Failed: 1}, want: "healthy"},
+		{name: "degraded by failures", attempts: argo_model.AttemptSummary{Total: 100, Failed: 4}, want: "degraded"},
+		{name: "degraded by legacy traffic", attempts: argo_model.AttemptSummary{Total: 100, UnverifiedIdentity: 1}, want: "degraded"},
+		{name: "unhealthy by failures", attempts: argo_model.AttemptSummary{Total: 100, Failed: 10}, want: "unhealthy"},
+		{name: "unhealthy by aged messages", attempts: argo_model.AttemptSummary{Total: 100}, lifecycle: argo_model.LifecycleSummary{PendingAged: 1}, want: "unhealthy"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, _ := gatewayOperationalState(&test.attempts, &test.lifecycle)
+			if got != test.want {
+				t.Fatalf("state = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestApplicationHealth(t *testing.T) {
 	now := time.Date(2026, time.August, 18, 18, 0, 0, 0, time.UTC)
 	recent := now.Add(-45 * time.Second)

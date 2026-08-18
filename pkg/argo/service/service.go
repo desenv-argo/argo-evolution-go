@@ -73,6 +73,7 @@ type Service interface {
 	RecordAttempt(ctx context.Context, attempt *argo_model.MessageAttempt) error
 	ListAttempts(ctx context.Context, filters argo_model.AttemptFilters) ([]argo_model.MessageAttempt, error)
 	AttemptSummary(ctx context.Context, filters argo_model.AttemptFilters) (*argo_model.AttemptSummary, error)
+	GatewayOperationsOverview(ctx context.Context, filters argo_model.AttemptFilters) (*argo_model.GatewayOperationsOverview, error)
 	RecordHeartbeat(ctx context.Context, slug, credential string, input HeartbeatInput) (*argo_model.IntegrationHeartbeat, error)
 	ListHeartbeats(ctx context.Context, filters argo_model.HeartbeatFilters) ([]argo_model.IntegrationHeartbeat, error)
 	HealthSummary(ctx context.Context, filters argo_model.HeartbeatFilters) (*argo_model.HealthSummary, error)
@@ -91,6 +92,7 @@ type service struct {
 	now           func() time.Time
 	pendingAge    time.Duration
 	mediaMaxBytes int64
+	runtime       argo_model.GatewayRuntime
 }
 
 func (s *service) StoreMessageMedia(ctx context.Context, instanceID, providerMessageID, fileName, mimeType string, content []byte) error {
@@ -263,6 +265,61 @@ func (s *service) ListAttempts(ctx context.Context, filters argo_model.AttemptFi
 
 func (s *service) AttemptSummary(ctx context.Context, filters argo_model.AttemptFilters) (*argo_model.AttemptSummary, error) {
 	return s.repository.AttemptSummary(ctx, filters)
+}
+
+func (s *service) GatewayOperationsOverview(ctx context.Context, filters argo_model.AttemptFilters) (*argo_model.GatewayOperationsOverview, error) {
+	attempts, err := s.repository.AttemptSummary(ctx, filters)
+	if err != nil {
+		return nil, err
+	}
+	applications, instances, err := s.repository.GatewayUsage(ctx, filters)
+	if err != nil {
+		return nil, err
+	}
+	lifecycle, err := s.LifecycleSummary(ctx, argo_model.LifecycleFilters{From: filters.From, To: filters.To, ApplicationSlug: filters.ApplicationSlug, InstanceID: filters.InstanceID})
+	if err != nil {
+		return nil, err
+	}
+	now := s.now().UTC()
+	runtime := s.runtime
+	runtime.UptimeSec = int64(now.Sub(runtime.StartedAt).Seconds())
+	if runtime.UptimeSec < 0 {
+		runtime.UptimeSec = 0
+	}
+	state, signals := gatewayOperationalState(attempts, lifecycle)
+	overview := &argo_model.GatewayOperationsOverview{
+		From: filters.From, To: filters.To, GeneratedAt: now, State: state, Runtime: runtime,
+		Attempts: *attempts, Lifecycle: *lifecycle, Applications: applications, Instances: instances,
+		ErrorCategories: lifecycle.Failures, LegacyUnknown: attempts.UnverifiedIdentity, Signals: signals,
+	}
+	if attempts.Total > 0 {
+		overview.LegacyPercentage = float64(attempts.UnverifiedIdentity) * 100 / float64(attempts.Total)
+	}
+	return overview, nil
+}
+
+func gatewayOperationalState(attempts *argo_model.AttemptSummary, lifecycle *argo_model.LifecycleSummary) (string, []string) {
+	failureRate := float64(0)
+	if attempts.Total > 0 {
+		failureRate = float64(attempts.Failed) * 100 / float64(attempts.Total)
+	}
+	state := "healthy"
+	if failureRate >= 10 || lifecycle.PendingAged > 0 {
+		state = "unhealthy"
+	} else if failureRate >= 3 || attempts.UnverifiedIdentity > 0 {
+		state = "degraded"
+	}
+	signals := make([]string, 0, 3)
+	if failureRate >= 3 {
+		signals = append(signals, fmt.Sprintf("failure_rate:%.1f", failureRate))
+	}
+	if lifecycle.PendingAged > 0 {
+		signals = append(signals, fmt.Sprintf("pending_aged:%d", lifecycle.PendingAged))
+	}
+	if attempts.UnverifiedIdentity > 0 {
+		signals = append(signals, fmt.Sprintf("legacy_unknown:%d", attempts.UnverifiedIdentity))
+	}
+	return state, signals
 }
 
 func (s *service) RecordReceipt(ctx context.Context, instanceID string, providerMessageIDs []string, state string, occurredAt time.Time) error {
@@ -612,12 +669,20 @@ func hashCredential(value string) string {
 	return hex.EncodeToString(hash[:])
 }
 
-func NewService(repository argo_repository.Repository) Service {
+func NewService(repository argo_repository.Repository, runtime ...argo_model.GatewayRuntime) Service {
+	runtimeInfo := argo_model.GatewayRuntime{Version: "0.0.0", StartedAt: time.Now().UTC()}
+	if len(runtime) > 0 {
+		runtimeInfo = runtime[0]
+		if runtimeInfo.StartedAt.IsZero() {
+			runtimeInfo.StartedAt = time.Now().UTC()
+		}
+	}
 	return &service{
 		repository:    repository,
 		now:           time.Now,
 		pendingAge:    pendingAgeFromEnvironment(),
 		mediaMaxBytes: messageMediaMaxBytesFromEnvironment(),
+		runtime:       runtimeInfo,
 	}
 }
 
