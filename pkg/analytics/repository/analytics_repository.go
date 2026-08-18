@@ -21,6 +21,26 @@ type analyticsRepository struct {
 	db *gorm.DB
 }
 
+type conversationRow struct {
+	InstanceID        string
+	InstanceName      string
+	ChatJID           string `gorm:"column:chat_jid"`
+	Source            string
+	PushName          string
+	IsGroup           bool
+	MessageID         string
+	MessageType       string
+	Text              string
+	Caption           string
+	SentAt            time.Time
+	Direction         string
+	Status            string
+	MessageCount      int64
+	InboundCount      int64
+	OutboundCount     int64
+	UnansweredInbound int64
+}
+
 func (r *analyticsRepository) Dashboard(ctx context.Context, filters analytics_model.Filters) (*analytics_model.DashboardSummary, error) {
 	summary := &analytics_model.DashboardSummary{From: filters.From, To: filters.To, Volume: []analytics_model.VolumePoint{}}
 
@@ -132,25 +152,7 @@ func (r *analyticsRepository) ListConversations(ctx context.Context, filters ana
 		query = query.Where("ranked.sent_at < ?", *filters.Before)
 	}
 
-	var rows []struct {
-		InstanceID        string
-		InstanceName      string
-		ChatJID           string
-		Source            string
-		PushName          string
-		IsGroup           bool
-		MessageID         string
-		MessageType       string
-		Text              string
-		Caption           string
-		SentAt            time.Time
-		Direction         string
-		Status            string
-		MessageCount      int64
-		InboundCount      int64
-		OutboundCount     int64
-		UnansweredInbound int64
-	}
+	var rows []conversationRow
 	if err := query.Order("ranked.sent_at DESC, ranked.chat_jid ASC").Limit(limit + 1).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
