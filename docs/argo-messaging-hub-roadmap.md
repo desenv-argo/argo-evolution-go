@@ -107,7 +107,11 @@ Status: primeiro vertical slice operacional implementado.
 - [x] filtros por aplicação, instância, período, tipo, estado e identificadores de correlação;
 - [x] API administrativa em `/argo/v1/messages/lifecycle` e `/argo/v1/messages/lifecycle/summary`;
 - [x] tela enterprise com funil, falhas, latências e drill-down da linha do tempo;
-- [ ] worker periódico dedicado para reconciliação fora do ciclo de consultas;
+- [x] worker periódico dedicado para reconciliação fora do ciclo de consultas;
+  - executa imediatamente após o startup e depois por intervalo, sem sobreposição;
+  - `ARGO_MESSAGE_PENDING_RECONCILE_SECONDS` define o intervalo (padrão: 60 segundos);
+  - `ARGO_MESSAGE_PENDING_RECONCILE_TIMEOUT_SECONDS` define o timeout de cada execução (padrão: 10 segundos);
+  - consultas de eventos e métricas permanecem somente leitura;
 - [ ] backfill opcional para mensagens anteriores à criação da tabela Argo.
 
 A janela padrão de envelhecimento é 15 minutos e pode ser alterada com
