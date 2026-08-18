@@ -113,10 +113,10 @@ func (r *repository) RecordReceipt(ctx context.Context, instanceID string, provi
 				continue
 			}
 			var attempt argo_model.MessageAttempt
-			err := tx.Where("instance_id = ? AND provider_message_id = ?", instanceID, providerMessageID).
-				Order("completed_at DESC").First(&attempt).Error
-			if err != nil && err != gorm.ErrRecordNotFound {
-				return err
+			lookup := tx.Where("instance_id = ? AND provider_message_id = ?", instanceID, providerMessageID).
+				Order("completed_at DESC").Limit(1).Find(&attempt)
+			if lookup.Error != nil {
+				return lookup.Error
 			}
 			event := argo_model.MessageLifecycleEvent{
 				EventKey:          fmt.Sprintf("receipt:%s:%s:%s", instanceID, providerMessageID, state),
@@ -126,7 +126,7 @@ func (r *repository) RecordReceipt(ctx context.Context, instanceID string, provi
 				State:             state,
 				OccurredAt:        occurredAt.UTC(),
 			}
-			if err == nil {
+			if lookup.RowsAffected > 0 {
 				event.AttemptID = &attempt.ID
 				event.ApplicationID = attempt.ApplicationID
 				event.ApplicationSlug = attempt.ApplicationSlug

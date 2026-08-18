@@ -9,6 +9,7 @@ import (
 	argo_model "github.com/evolution-foundation/evolution-go/pkg/argo/model"
 	argo_service "github.com/evolution-foundation/evolution-go/pkg/argo/service"
 	"github.com/gin-gonic/gin"
+	"github.com/gomessguii/logger"
 	"gorm.io/gorm"
 )
 
@@ -71,6 +72,7 @@ func (h *handler) HealthSummary(ctx *gin.Context) {
 	}
 	summary, err := h.service.HealthSummary(ctx.Request.Context(), filters)
 	if err != nil {
+		logger.LogError("[ARGO_HEALTH] failed to load integration health: %v", err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load integration health"})
 		return
 	}
