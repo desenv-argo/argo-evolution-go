@@ -260,9 +260,10 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		argo_middleware.NewAttemptTracker(argoService),
 	).AssignRoutes(r)
 
-	if config.ConnectOnStartup {
-		go whatsmeowService.ConnectOnStartup(config.ClientName)
+	if !config.ConnectOnStartup {
+		logger.LogWarn("[STARTUP] CONNECT_ON_STARTUP=false is overridden: linked-session continuity is mandatory in this deployment")
 	}
+	go whatsmeowService.ConnectOnStartup(config.ClientName)
 
 	r.GET("/ws", func(c *gin.Context) {
 		token := c.Query("token")
