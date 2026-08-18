@@ -1,6 +1,11 @@
 package argo_service
 
-import "testing"
+import (
+	"testing"
+	"time"
+
+	argo_model "github.com/evolution-foundation/evolution-go/pkg/argo/model"
+)
 
 func TestValidateInput(t *testing.T) {
 	tests := []struct {
@@ -50,5 +55,37 @@ func TestNormalizeHeartbeat(t *testing.T) {
 	}
 	if got := normalizeHeartbeat(100000); got != 86400 {
 		t.Fatalf("normalizeHeartbeat(100000) = %d", got)
+	}
+}
+
+func TestApplicationHealth(t *testing.T) {
+	now := time.Date(2026, time.August, 18, 18, 0, 0, 0, time.UTC)
+	recent := now.Add(-45 * time.Second)
+	stale := now.Add(-121 * time.Second)
+	tests := []struct {
+		name        string
+		application argo_model.Application
+		wantState   string
+		wantAge     int64
+	}{
+		{name: "disabled", application: argo_model.Application{Active: false}, wantState: "disabled"},
+		{name: "unknown", application: argo_model.Application{Active: true}, wantState: "unknown"},
+		{name: "healthy", application: argo_model.Application{Active: true, ExpectedHeartbeatSeconds: 60, LastHeartbeatAt: &recent, LastHeartbeatStatus: "healthy"}, wantState: "healthy", wantAge: 45},
+		{name: "reported degradation", application: argo_model.Application{Active: true, ExpectedHeartbeatSeconds: 60, LastHeartbeatAt: &recent, LastHeartbeatStatus: "degraded"}, wantState: "degraded", wantAge: 45},
+		{name: "stale", application: argo_model.Application{Active: true, ExpectedHeartbeatSeconds: 60, LastHeartbeatAt: &stale, LastHeartbeatStatus: "healthy"}, wantState: "offline", wantAge: 121},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			state, age := applicationHealth(&test.application, now)
+			if state != test.wantState || age != test.wantAge {
+				t.Fatalf("applicationHealth() = (%q, %d), want (%q, %d)", state, age, test.wantState, test.wantAge)
+			}
+		})
+	}
+}
+
+func TestCleanValue(t *testing.T) {
+	if got := cleanValue("  version\r\nwith-noise  ", 12); got != "version  wit" {
+		t.Fatalf("cleanValue() = %q", got)
 	}
 }
