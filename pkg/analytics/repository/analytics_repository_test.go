@@ -22,20 +22,14 @@ func TestConversationRowMapsChatJIDColumn(t *testing.T) {
 	}
 }
 
-func TestConversationContactResolvesLIDToPhone(t *testing.T) {
-	if got := conversationContact("189386650058872@lid", "189386650058872", "5582999999999"); got != "5582999999999" {
-		t.Fatalf("conversationContact() = %q, want resolved phone", got)
-	}
-}
-
 func TestConversationContactDoesNotPresentLIDAsPhone(t *testing.T) {
-	if got := conversationContact("189386650058872@lid", "189386650058872", ""); got != "" {
+	if got := conversationContact("189386650058872@lid", "189386650058872"); got != "" {
 		t.Fatalf("conversationContact() = %q, want empty contact for unresolved LID", got)
 	}
 }
 
 func TestConversationContactPreservesPhoneJIDSource(t *testing.T) {
-	if got := conversationContact("5582999999999@s.whatsapp.net", "5582999999999", ""); got != "5582999999999" {
+	if got := conversationContact("5582999999999@s.whatsapp.net", "5582999999999"); got != "5582999999999" {
 		t.Fatalf("conversationContact() = %q, want source phone", got)
 	}
 }
