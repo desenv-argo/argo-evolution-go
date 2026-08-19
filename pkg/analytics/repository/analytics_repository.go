@@ -25,7 +25,6 @@ type conversationRow struct {
 	InstanceID        string
 	InstanceName      string
 	ChatJID           string `gorm:"column:chat_jid"`
-	ResolvedPhone     string `gorm:"column:resolved_phone"`
 	Source            string
 	PushName          string
 	IsGroup           bool
@@ -132,10 +131,6 @@ func (r *analyticsRepository) ListConversations(ctx context.Context, filters ana
 			ranked.instance_id,
 			COALESCE(instances.name, '') AS instance_name,
 			ranked.chat_jid,
-			CASE
-				WHEN ranked.chat_jid LIKE '%@lid' THEN COALESCE(lid_map.pn, '')
-				ELSE ranked.source
-			END AS resolved_phone,
 			ranked.source,
 			ranked.push_name,
 			ranked.is_group,
@@ -152,7 +147,6 @@ func (r *analyticsRepository) ListConversations(ctx context.Context, filters ana
 			ranked.unanswered_inbound
 		`).
 		Joins("LEFT JOIN instances ON instances.id = ranked.instance_id").
-		Joins("LEFT JOIN whatsmeow_lid_map AS lid_map ON lid_map.lid = SPLIT_PART(ranked.chat_jid, '@', 1)").
 		Where("ranked.conversation_rank = 1")
 	if filters.Before != nil {
 		query = query.Where("ranked.sent_at < ?", *filters.Before)
@@ -180,7 +174,7 @@ func (r *analyticsRepository) ListConversations(ctx context.Context, filters ana
 			InstanceID:        row.InstanceID,
 			InstanceName:      row.InstanceName,
 			ChatJID:           row.ChatJID,
-			Contact:           conversationContact(row.ChatJID, row.Source, row.ResolvedPhone),
+			Contact:           conversationContact(row.ChatJID, row.Source),
 			PushName:          row.PushName,
 			IsGroup:           row.IsGroup,
 			LastMessageID:     row.MessageID,
@@ -203,9 +197,9 @@ func (r *analyticsRepository) ListConversations(ctx context.Context, filters ana
 	return page, nil
 }
 
-func conversationContact(chatJID, source, resolvedPhone string) string {
+func conversationContact(chatJID, source string) string {
 	if strings.HasSuffix(chatJID, "@lid") {
-		return strings.TrimSpace(resolvedPhone)
+		return ""
 	}
 	return strings.TrimSpace(source)
 }
