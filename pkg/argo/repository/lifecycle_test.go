@@ -105,3 +105,35 @@ func TestAttemptLifecycleEventsDoesNotAcceptValidationFailure(t *testing.T) {
 		t.Fatalf("validation failure must not be counted as accepted: %#v", events)
 	}
 }
+
+func TestListLifecycleFeedScopesApplicationAndUsesStableCursor(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	createdAt := time.Date(2026, time.August, 19, 14, 0, 0, 0, time.UTC)
+	mock.ExpectQuery(`(?s)SELECT \* FROM "argo_message_lifecycle_events".*application_id = \$1 AND identity_verified = TRUE.*created_at > \$2.*created_at = \$3 AND id > \$4.*ORDER BY created_at ASC, id ASC LIMIT \$5`).
+		WithArgs("app-id", createdAt, createdAt, "event-1", 501).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "application_id", "application_slug", "state", "occurred_at", "created_at"}).
+			AddRow("event-2", "app-id", "argo-erp", "sent", createdAt, createdAt.Add(time.Second)))
+
+	repository := NewRepository(db)
+	events, err := repository.ListLifecycleFeed(context.Background(), "app-id", argo_model.LifecycleFeedCursor{
+		CreatedAt: createdAt,
+		ID:        "event-1",
+	}, 501)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].ID != "event-2" {
+		t.Fatalf("unexpected feed events: %#v", events)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}

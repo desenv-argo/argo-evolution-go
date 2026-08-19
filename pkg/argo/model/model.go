@@ -285,6 +285,35 @@ type LifecycleFilters struct {
 	Limit             int
 }
 
+// LifecycleFeedCursor is the stable position used by application consumers.
+// CreatedAt is used instead of OccurredAt because late provider receipts can
+// legitimately arrive with an older occurrence timestamp.
+type LifecycleFeedCursor struct {
+	CreatedAt time.Time
+	ID        string
+}
+
+type LifecycleFeedItem struct {
+	EventID           string    `json:"eventId"`
+	Application       string    `json:"application"`
+	InstanceID        *string   `json:"instanceId,omitempty"`
+	CorrelationID     string    `json:"correlationId,omitempty"`
+	ProviderMessageID string    `json:"providerMessageId,omitempty"`
+	IdempotencyKey    string    `json:"idempotencyKey,omitempty"`
+	MessageType       string    `json:"messageType,omitempty"`
+	State             string    `json:"state"`
+	FailureCategory   string    `json:"failureCategory,omitempty"`
+	FailureCode       string    `json:"failureCode,omitempty"`
+	OccurredAt        time.Time `json:"occurredAt"`
+	CreatedAt         time.Time `json:"createdAt"`
+}
+
+type LifecycleFeedPage struct {
+	Data       []LifecycleFeedItem `json:"data"`
+	NextCursor string              `json:"nextCursor,omitempty"`
+	HasMore    bool                `json:"hasMore"`
+}
+
 // LifecycleBackfillOptions bounds an explicit reconstruction of lifecycle
 // evidence that predates the Argo lifecycle table.
 type LifecycleBackfillOptions struct {

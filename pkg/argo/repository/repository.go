@@ -24,6 +24,7 @@ type Repository interface {
 	HeartbeatMetrics(ctx context.Context, filters argo_model.HeartbeatFilters) (int64, int64, float64, error)
 	RecordReceipt(ctx context.Context, instanceID string, providerMessageIDs []string, state string, occurredAt time.Time) error
 	ListLifecycleEvents(ctx context.Context, filters argo_model.LifecycleFilters) ([]argo_model.MessageLifecycleEvent, error)
+	ListLifecycleFeed(ctx context.Context, applicationID string, cursor argo_model.LifecycleFeedCursor, limit int) ([]argo_model.MessageLifecycleEvent, error)
 	LifecycleEvents(ctx context.Context, filters argo_model.LifecycleFilters) ([]argo_model.MessageLifecycleEvent, error)
 	ReconcilePendingAged(ctx context.Context, cutoff time.Time) (int64, error)
 	BackfillLifecycle(ctx context.Context, options argo_model.LifecycleBackfillOptions) (*argo_model.LifecycleBackfillReport, error)

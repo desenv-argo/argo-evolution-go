@@ -26,6 +26,7 @@ type Handler interface {
 	ListHeartbeats(ctx *gin.Context)
 	HealthSummary(ctx *gin.Context)
 	ListLifecycleEvents(ctx *gin.Context)
+	ApplicationLifecycleFeed(ctx *gin.Context)
 	LifecycleSummary(ctx *gin.Context)
 	BackfillLifecycle(ctx *gin.Context)
 	GetMessageMedia(ctx *gin.Context)
