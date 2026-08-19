@@ -126,6 +126,16 @@ const styles = String.raw`
   .error { margin-bottom: 14px; border: 1px solid rgba(255,93,115,.3); border-radius: 8px; background: rgba(255,93,115,.08); color: #ffb4bf; padding: 10px 12px; font-size: 12px; }
 
   .integration-page { padding-bottom: 20px; }
+  .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin: 18px 0 9px; }
+  .section-heading h2 { margin: 0; font-size: 14px; font-weight: 800; }
+  .section-heading p { margin: 3px 0 0; color: var(--argo-muted); font-size: 10px; }
+  .health-callout { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 12px; border: 1px solid var(--argo-border); border-left: 4px solid #64716a; border-radius: 10px; background: linear-gradient(100deg, rgba(100,113,106,.12), rgba(13,17,14,.94)); padding: 14px 16px; }
+  .health-callout.good { border-left-color: var(--argo-green); background: linear-gradient(100deg, rgba(0,229,155,.09), rgba(13,17,14,.94)); }
+  .health-callout.warn { border-left-color: var(--argo-amber); background: linear-gradient(100deg, rgba(255,182,72,.09), rgba(13,17,14,.94)); }
+  .health-callout.bad { border-left-color: var(--argo-red); background: linear-gradient(100deg, rgba(255,93,115,.11), rgba(13,17,14,.94)); }
+  .health-callout-title { font-size: 16px; font-weight: 820; }
+  .health-callout-copy { margin-top: 3px; color: #b6c0ba; font-size: 11px; }
+  .health-callout-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
   .integration-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .integration-grid { display: grid; grid-template-columns: minmax(330px, .72fr) minmax(0, 1.7fr); gap: 14px; align-items: start; }
   .application-list { display: grid; gap: 8px; }
@@ -156,21 +166,27 @@ const styles = String.raw`
   .operations-table { width: 100%; border-collapse: collapse; font-size: 10px; }
   .operations-table th { position: sticky; z-index: 1; top: 0; background: #101411; color: #77827b; padding: 8px 10px; font-size: 8px; font-weight: 800; letter-spacing: .055em; text-align: left; text-transform: uppercase; white-space: nowrap; }
   .operations-table td { max-width: 230px; border-top: 1px solid rgba(255,255,255,.055); padding: 9px 10px; color: #c7d0ca; vertical-align: middle; }
+  .operations-table td strong { display: block; margin-bottom: 5px; color: #eef4f0; font-size: 10px; }
   .operations-table tbody tr:hover { background: rgba(0,229,155,.025); }
   .mono { overflow: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
   .operation-error { color: #ff8293; font-weight: 700; }
   .operation-ok { color: #57ddb0; font-weight: 700; }
   .operation-muted { color: var(--argo-muted); }
   .error-breakdown { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 12px; }
-  .error-token { border: 1px solid rgba(255,93,115,.15); border-radius: 6px; background: rgba(255,93,115,.055); color: #dca6ae; padding: 5px 7px; font-size: 9px; }
+  .error-token { border: 1px solid rgba(255,93,115,.22); border-radius: 999px; background: rgba(255,93,115,.08); color: #ffc0c8; padding: 5px 9px; font-size: 9px; font-weight: 760; }
   .pagination { justify-content: space-between; gap: 12px; border-top: 1px solid var(--argo-border); padding: 9px 14px; color: var(--argo-muted); font-size: 9px; }
-  .gateway-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
+  .gateway-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
   .usage-list { display: grid; gap: 7px; }
   .usage-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; border-bottom: 1px solid rgba(255,255,255,.055); padding: 7px 0; }
   .usage-row:last-child { border-bottom: 0; }
   .usage-key { overflow: hidden; font-size: 11px; font-weight: 720; text-overflow: ellipsis; white-space: nowrap; }
   .usage-meta { color: var(--argo-muted); font-size: 9px; }
   .usage-total { color: #dce5df; font-size: 12px; font-weight: 760; text-align: right; }
+  .badge { display: inline-flex; align-items: center; width: fit-content; border: 1px solid var(--argo-border); border-radius: 999px; background: rgba(148,163,184,.07); color: #bac5be; padding: 3px 7px; font-size: 9px; font-weight: 760; white-space: nowrap; }
+  .badge.good { border-color: rgba(0,229,155,.24); background: rgba(0,229,155,.08); color: #70e5bd; }
+  .badge.warn { border-color: rgba(255,182,72,.26); background: rgba(255,182,72,.09); color: #ffd081; }
+  .badge.bad { border-color: rgba(255,93,115,.26); background: rgba(255,93,115,.09); color: #ff9aaa; }
+  .badge.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .upstream-change { display: block; overflow: hidden; color: #b9c5be; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; text-decoration: none; }
   .upstream-change:hover { color: var(--argo-green); }
   .dialog-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.68); padding: 20px; backdrop-filter: blur(3px); }
@@ -259,6 +275,8 @@ const styles = String.raw`
   @media (max-width: 820px) {
     .page { padding: 18px; }
     .header { align-items: flex-start; flex-direction: column; }
+    .health-callout { align-items: flex-start; flex-direction: column; }
+    .health-callout-badges { justify-content: flex-start; }
     .toolbar { justify-content: flex-start; }
     .metrics { grid-template-columns: 1fr; }
     .integration-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -380,6 +398,30 @@ function formatFileSize(value) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const errorLabels = {
+  AUTH_FAILED: "Falha de autenticação",
+  RATE_LIMITED: "Limite de requisições",
+  INSTANCE_OFFLINE: "Instância desconectada",
+  INVALID_RECIPIENT: "Destinatário inválido",
+  VALIDATION_FAILED: "Dados inválidos",
+  WHATSAPP_TIMEOUT: "Timeout do WhatsApp",
+  MEDIA_FAILED: "Falha no anexo",
+  INTERNAL_ERROR: "Erro interno",
+};
+
+function friendlyError(code) {
+  return errorLabels[code] || String(code || "Erro desconhecido").replaceAll("_", " ").toLowerCase().replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function displayApplication(value) {
+  return !value || value === "legacy/unknown" ? "Não identificada" : value;
+}
+
+function shortIdentifier(value, size = 12) {
+  const text = String(value || "");
+  return text.length > size ? `${text.slice(0, size)}…` : text || "—";
 }
 
 async function fetchCapturedMedia(message) {
@@ -703,13 +745,17 @@ class ArgoIntegrations extends ArgoBaseElement {
           <div class="toolbar"><button class="button" data-refresh type="button">Atualizar</button><button class="button primary" data-create type="button">Nova integração</button></div>
         </header>
         <div class="error" data-error hidden></div>
+        <section data-health-callout></section>
+        <div class="section-heading"><div><h2>Visão geral</h2><p>O que precisa da sua atenção agora</p></div></div>
         <section class="metrics integration-summary" data-summary></section>
+        <div class="section-heading"><div><h2>Consumo e saúde</h2><p>Quem utiliza o gateway e como o transporte está se comportando</p></div></div>
         <section class="gateway-grid">
           <article class="panel"><div class="panel-header"><div><h2 class="panel-title">Uso por aplicação</h2><p class="panel-subtitle">Quem está consumindo o gateway no período</p></div></div><div class="panel-body usage-list" data-application-usage></div></article>
           <article class="panel"><div class="panel-header"><div><h2 class="panel-title">Uso por instância</h2><p class="panel-subtitle">Distribuição e falhas por canal WhatsApp</p></div></div><div class="panel-body usage-list" data-instance-usage></div></article>
           <article class="panel"><div class="panel-header"><div><h2 class="panel-title">Sinais operacionais</h2><p class="panel-subtitle">Entrega, leitura e categorias de falha</p></div></div><div class="panel-body usage-list" data-gateway-signals></div></article>
           <article class="panel"><div class="panel-header"><div><h2 class="panel-title">Radar do upstream</h2><p class="panel-subtitle">Evolution GO original e defasagem do fork</p></div><span class="status-pill" data-upstream-status>Verificando</span></div><div class="panel-body usage-list" data-upstream></div></article>
         </section>
+        <div class="section-heading"><div><h2>Detalhes técnicos</h2><p>Cadastro de consumidores e investigação das últimas tentativas</p></div></div>
         <section class="integration-grid">
           <article class="panel">
             <div class="panel-header"><div><h2 class="panel-title">Aplicações</h2><p class="panel-subtitle">Sistemas autorizados a identificar suas operações</p></div><span class="status-pill" data-app-count>0</span></div>
@@ -819,6 +865,7 @@ class ArgoIntegrations extends ArgoBaseElement {
       this.summary = this.overview.attempts || {};
       this.attempts = Array.isArray(attempts) ? attempts : [];
       this.upstream = upstream || {};
+      this.renderHealthCallout();
       this.renderSummary();
       this.renderGatewayUsage();
       this.renderUpstream();
@@ -839,14 +886,13 @@ class ArgoIntegrations extends ArgoBaseElement {
     const total = Number(this.summary?.total || 0);
     const failed = Number(this.summary?.failed || 0);
     const failureRate = total ? (failed / total) * 100 : 0;
-    const gatewayState = this.overview?.state || "unknown";
-    const stateLabels = { healthy: "Saudável", degraded: "Degradado", unhealthy: "Crítico", unknown: "Desconhecido" };
-    const uptimeHours = Math.floor(Number(this.overview?.runtime?.uptime_seconds || 0) / 3600);
+    const successRate = total ? (Number(this.summary?.succeeded || 0) / total) * 100 : 0;
+    const identifiedRate = Math.max(0, 100 - Number(this.overview?.legacy_percentage || 0));
     const cards = [
-      ["Gateway", stateLabels[gatewayState], `v${this.overview?.runtime?.version || "0.0.0"} · uptime ${uptimeHours}h`, gatewayState === "healthy" ? "good" : gatewayState === "degraded" ? "warn" : "bad"],
-      ["Tentativas", total, `${numberFormatter.format(this.summary?.succeeded || 0)} aceitas pela API`, ""],
-      ["Taxa de falha", `${percentFormatter.format(failureRate)}%`, `${numberFormatter.format(failed)} falhas`, failed ? "bad" : "good"],
-      ["Legacy / unknown", `${percentFormatter.format(this.overview?.legacy_percentage || 0)}%`, `${numberFormatter.format(this.overview?.legacy_unknown || 0)} sem identidade Argo`, this.overview?.legacy_unknown ? "warn" : "good"],
+      ["Tentativas no período", total, "Chamadas aos endpoints de envio", ""],
+      ["Aceitas pela API", `${percentFormatter.format(successRate)}%`, `${numberFormatter.format(this.summary?.succeeded || 0)} de ${numberFormatter.format(total)}`, successRate >= 97 ? "good" : "warn"],
+      ["Falhas", `${percentFormatter.format(failureRate)}%`, `${numberFormatter.format(failed)} requerem investigação`, failed ? "bad" : "good"],
+      ["Tráfego identificado", `${percentFormatter.format(identifiedRate)}%`, `${numberFormatter.format(this.overview?.legacy_unknown || 0)} sem identidade Argo`, identifiedRate === 100 ? "good" : "warn"],
     ];
     this.shadowRoot.querySelector("[data-summary]").replaceChildren(...cards.map(([label, value, note, tone]) => {
       const card = element("article", "card");
@@ -857,6 +903,24 @@ class ArgoIntegrations extends ArgoBaseElement {
     }));
   }
 
+  renderHealthCallout() {
+    const state = this.overview?.state || "unknown";
+    const labels = { healthy: "Gateway operando normalmente", degraded: "Gateway requer atenção", unhealthy: "Gateway em estado crítico", unknown: "Saúde do gateway ainda não determinada" };
+    const tone = state === "healthy" ? "good" : state === "degraded" ? "warn" : state === "unhealthy" ? "bad" : "";
+    const total = Number(this.summary?.total || 0);
+    const failed = Number(this.summary?.failed || 0);
+    const callout = element("div", `health-callout ${tone}`);
+    const copy = element("div");
+    const uptime = Math.floor(Number(this.overview?.runtime?.uptime_seconds || 0) / 3600);
+    copy.append(element("div", "health-callout-title", labels[state]), element("div", "health-callout-copy", state === "healthy" ? "Nenhum sinal crítico encontrado no período selecionado." : "Veja os indicadores destacados abaixo; os detalhes técnicos ficam no final da página."));
+    const badges = element("div", "health-callout-badges");
+    badges.append(element("span", `badge ${failed ? "bad" : "good"}`, `${numberFormatter.format(failed)} falhas de ${numberFormatter.format(total)}`));
+    badges.append(element("span", `badge ${this.overview?.legacy_unknown ? "warn" : "good"}`, `${numberFormatter.format(this.overview?.legacy_unknown || 0)} sem identidade`));
+    badges.append(element("span", "badge", `v${this.overview?.runtime?.version || "0.0.0"} · ${uptime}h ativo`));
+    callout.append(copy, badges);
+    this.shadowRoot.querySelector("[data-health-callout]").replaceChildren(callout);
+  }
+
   renderGatewayUsage() {
     const renderUsage = (target, items) => {
       if (!items?.length) { target.replaceChildren(element("div", "operation-muted", "Sem tráfego no período")); return; }
@@ -864,8 +928,12 @@ class ArgoIntegrations extends ArgoBaseElement {
         const row = element("div", "usage-row");
         const info = element("div");
         const failureRate = item.total ? (Number(item.failed || 0) / Number(item.total)) * 100 : 0;
-        info.append(element("div", "usage-key", item.key), element("div", "usage-meta", `${percentFormatter.format(failureRate)}% falhas · Pm ${Math.round(item.average_duration_ms || 0)} ms`));
-        row.append(info, element("div", "usage-total", numberFormatter.format(item.total || 0)));
+        const name = item.key === "legacy/unknown" ? "Não identificada" : item.key === "unknown" ? "Instância não informada" : item.key;
+        const meta = element("div", "status-line");
+        meta.append(element("span", `badge ${failureRate ? "bad" : "good"}`, `${percentFormatter.format(failureRate)}% falhas`), element("span", "badge", `${Math.round(item.average_duration_ms || 0)} ms médio`));
+        info.append(element("div", "usage-key", name), meta);
+        const volume = element("div", "usage-total", `${numberFormatter.format(item.total || 0)} envios`);
+        row.append(info, volume);
         return row;
       }));
     };
@@ -873,13 +941,13 @@ class ArgoIntegrations extends ArgoBaseElement {
     renderUsage(this.shadowRoot.querySelector("[data-instance-usage]"), this.overview?.instances);
     const lifecycle = this.overview?.lifecycle || {};
     const signals = [
-      ["Taxa de entrega", `${percentFormatter.format(lifecycle.delivery_rate || 0)}%`],
-      ["Taxa de leitura", `${percentFormatter.format(lifecycle.read_rate || 0)}%`],
-      ["Pendentes envelhecidas", numberFormatter.format(lifecycle.pending_aged || 0)],
-      ...((this.overview?.error_categories || []).slice(0, 5).map((item) => [`${item.category || "internal"} · ${item.code || "UNKNOWN"}`, numberFormatter.format(item.count || 0)])),
+      ["Entrega confirmada", `${percentFormatter.format(Math.min(100, lifecycle.delivery_rate || 0))}%`, "good"],
+      ["Leitura confirmada", `${percentFormatter.format(Math.min(100, lifecycle.read_rate || 0))}%`, "good"],
+      ["Pendentes envelhecidas", numberFormatter.format(lifecycle.pending_aged || 0), lifecycle.pending_aged ? "warn" : "good"],
+      ...((this.overview?.error_categories || []).slice(0, 5).map((item) => [friendlyError(item.code), numberFormatter.format(item.count || 0), "bad"])),
     ];
-    this.shadowRoot.querySelector("[data-gateway-signals]").replaceChildren(...signals.map(([label, value]) => {
-      const row = element("div", "usage-row"); row.append(element("div", "usage-key", label), element("div", "usage-total", value)); return row;
+    this.shadowRoot.querySelector("[data-gateway-signals]").replaceChildren(...signals.map(([label, value, tone]) => {
+      const row = element("div", "usage-row"); row.append(element("div", "usage-key", label), element("span", `badge ${tone}`, value)); return row;
     }));
   }
 
@@ -896,7 +964,7 @@ class ArgoIntegrations extends ArgoBaseElement {
     rows.push(["Fork baseado em", this.upstream?.baseline_version || this.upstream?.baseline_sha?.slice(0, 7) || "—"]);
     rows.push(["Upstream atual", version]);
     rows.push(["Commits pendentes", numberFormatter.format(this.upstream?.behind_by || 0)]);
-    for (const [label, value] of rows) { const row = element("div", "usage-row"); row.append(element("div", "usage-key", label), element("div", "usage-total", value)); target.append(row); }
+    for (const [label, value] of rows) { const row = element("div", "usage-row"); row.append(element("div", "usage-key", label), element("span", "badge mono", value)); target.append(row); }
     if (this.upstream?.error) target.append(element("div", "media-status unavailable", this.upstream.error));
     for (const change of (this.upstream?.changes || []).slice(0, 5)) {
       const link = element("a", "upstream-change", `${change.category || "other"} · ${change.title}`);
@@ -968,10 +1036,11 @@ class ArgoIntegrations extends ArgoBaseElement {
     const select = this.shadowRoot.querySelector("[data-error-code]");
     const current = select.value;
     select.replaceChildren(option("", "Todos os erros"));
-    for (const item of errors) select.append(option(item.error_code, `${item.error_code} (${item.count})`));
+    for (const item of errors) select.append(option(item.error_code, `${friendlyError(item.error_code)} (${item.count})`));
     if ([...select.options].some((item) => item.value === current)) select.value = current;
     target.replaceChildren(...errors.slice(0, 8).map((item) => {
-      const token = element("button", "error-token", `${item.error_code} · ${numberFormatter.format(item.count)}`);
+      const token = element("button", "error-token", `${friendlyError(item.error_code)} · ${numberFormatter.format(item.count)}`);
+      token.title = item.error_code;
       token.type = "button";
       token.addEventListener("click", () => { select.value = item.error_code; this.loadOperations(); });
       return token;
@@ -992,14 +1061,16 @@ class ArgoIntegrations extends ArgoBaseElement {
     target.replaceChildren(...this.attempts.map((attempt) => {
       const row = element("tr");
       const time = element("td", "", dateTimeFormatter.format(new Date(attempt.started_at)));
-      const application = element("td", "mono", attempt.application_slug || "legacy/unknown");
+      const application = element("td");
+      application.append(element("strong", "", displayApplication(attempt.application_slug)), element("div", `badge ${attempt.identity_verified ? "good" : "warn"}`, attempt.identity_verified ? "Identificada" : "Legacy"));
       application.title = attempt.identity_verified ? "Identidade verificada" : "Identidade não verificada";
       const endpoint = element("td", "mono", attempt.endpoint || "-");
-      const result = element("td", attempt.outcome === "succeeded" ? "operation-ok" : "operation-error", attempt.outcome === "succeeded" ? `${attempt.http_status} Aceita` : `${attempt.http_status} Falha`);
+      const result = element("td");
+      result.append(element("span", `badge ${attempt.outcome === "succeeded" ? "good" : "bad"}`, attempt.outcome === "succeeded" ? `${attempt.http_status} Aceita` : `${attempt.http_status} Falha`));
       const duration = element("td", "", `${numberFormatter.format(attempt.duration_ms || 0)} ms`);
-      const error = element("td", attempt.error_code ? "operation-error" : "operation-muted", attempt.error_code || "-");
+      const error = element("td", attempt.error_code ? "operation-error" : "operation-muted", attempt.error_code ? friendlyError(attempt.error_code) : "—");
       error.title = attempt.error_detail || "";
-      const correlation = element("td", "mono", attempt.correlation_id || "-");
+      const correlation = element("td", "mono", shortIdentifier(attempt.correlation_id));
       correlation.title = attempt.correlation_id || "";
       row.append(time, application, endpoint, result, duration, error, correlation);
       return row;
