@@ -29,6 +29,7 @@ import (
 	argo_model "github.com/evolution-foundation/evolution-go/pkg/argo/model"
 	argo_repository "github.com/evolution-foundation/evolution-go/pkg/argo/repository"
 	argo_service "github.com/evolution-foundation/evolution-go/pkg/argo/service"
+	argo_upstream "github.com/evolution-foundation/evolution-go/pkg/argo/upstream"
 	argo_worker "github.com/evolution-foundation/evolution-go/pkg/argo/worker"
 	call_handler "github.com/evolution-foundation/evolution-go/pkg/call/handler"
 	call_service "github.com/evolution-foundation/evolution-go/pkg/call/service"
@@ -199,6 +200,14 @@ func setupRouter(ctx context.Context, db *gorm.DB, authDB *sql.DB, sqliteDB *sql
 	)
 	logger.LogInfo("[ARGO_MEDIA] starting retention worker: retention=%s interval=%s batch=%d", mediaRetentionConfig.Retention, mediaRetentionConfig.Interval, mediaRetentionConfig.BatchSize)
 	go mediaRetentionWorker.Run(ctx)
+	upstreamConfig := argo_upstream.ConfigFromEnvironment()
+	upstreamMonitorConfig := argo_worker.UpstreamMonitorConfigFromEnvironment()
+	upstreamMonitor := argo_worker.NewUpstreamMonitor(
+		argo_upstream.NewChecker(upstreamConfig, nil), argoRepository, upstreamMonitorConfig,
+		argo_worker.UpstreamMonitorLogger{Info: logger.LogInfo, Error: logger.LogError},
+	)
+	logger.LogInfo("[ARGO_UPSTREAM] starting monitor: repository=%s branch=%s baseline=%s interval=%s", upstreamConfig.Repository, upstreamConfig.Branch, upstreamConfig.BaselineVersion, upstreamMonitorConfig.Interval)
+	go upstreamMonitor.Run(ctx)
 	captureGate, err := analytics_settings.NewCaptureGate(db, config.DatabaseSaveMessages)
 	if err != nil {
 		log.Fatalf("failed to initialize analytics settings: %v", err)
@@ -320,6 +329,7 @@ func migrate(db *gorm.DB) {
 		&argo_model.IntegrationHeartbeat{},
 		&argo_model.MessageLifecycleEvent{},
 		&argo_model.MessageMedia{},
+		&argo_model.UpstreamSnapshot{},
 	); err != nil {
 		log.Fatal(err)
 	}

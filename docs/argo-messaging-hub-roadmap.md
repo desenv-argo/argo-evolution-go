@@ -141,6 +141,14 @@ continuam no funil como `legacy/unknown`.
 - o estado do gateway considera taxa de falha, mensagens `pending_aged` e tráfego sem identidade Argo, sem depender do ERP ou de aplicações externas;
 - `GIT_COMMIT_SHA` identifica o commit implantado quando informado pelo ambiente de build/deploy.
 
+### Radar do upstream
+
+- um worker consulta periodicamente `evolution-foundation/evolution-go`, compara o commit-base conhecido com a `main` original e persiste snapshots imutáveis em `argo_upstream_snapshots`;
+- `GET /argo/v1/upstream/status` informa versão-base, versão mais recente, commits pendentes, comparação e mudanças classificadas como correção, segurança, breaking change, funcionalidade ou manutenção;
+- o Manager mostra a defasagem e links de análise sem consultar o GitHub durante a navegação;
+- falhas e rate limits do GitHub ficam isolados do transporte WhatsApp e são apresentados como monitor indisponível, preservando o último histórico;
+- configuração: `ARGO_UPSTREAM_REPOSITORY`, `ARGO_UPSTREAM_BRANCH`, `ARGO_UPSTREAM_BASE_SHA`, `ARGO_UPSTREAM_BASE_VERSION`, `ARGO_UPSTREAM_CHECK_SECONDS` e, opcionalmente, `ARGO_UPSTREAM_GITHUB_TOKEN`.
+
 ### Captura de conversas e anexos
 
 - mensagens recuperadas por `HistorySync` também alimentam a visão de conversas, cobrindo envios feitos por outros dispositivos e períodos offline;

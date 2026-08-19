@@ -179,6 +179,43 @@ type GatewayOperationsOverview struct {
 	Signals          []string           `json:"signals"`
 }
 
+type UpstreamChange struct {
+	SHA      string `json:"sha"`
+	Title    string `json:"title"`
+	URL      string `json:"url"`
+	Category string `json:"category"`
+}
+
+// UpstreamSnapshot is an immutable observation of the original repository.
+// Monitoring failures are persisted too, so the Manager never depends on a
+// live GitHub request and operators can distinguish stale data from no data.
+type UpstreamSnapshot struct {
+	ID              string           `json:"id" gorm:"type:uuid;primaryKey"`
+	Repository      string           `json:"repository" gorm:"size:200;not null"`
+	Branch          string           `json:"branch" gorm:"size:120;not null"`
+	BaselineSHA     string           `json:"baseline_sha" gorm:"size:64;not null"`
+	BaselineVersion string           `json:"baseline_version" gorm:"size:80"`
+	LatestSHA       string           `json:"latest_sha,omitempty" gorm:"size:64"`
+	LatestVersion   string           `json:"latest_version,omitempty" gorm:"size:80"`
+	BehindBy        int              `json:"behind_by" gorm:"not null;default:0"`
+	Status          string           `json:"status" gorm:"size:32;index;not null"`
+	Error           string           `json:"error,omitempty" gorm:"size:500"`
+	CompareURL      string           `json:"compare_url,omitempty" gorm:"size:500"`
+	CheckedAt       time.Time        `json:"checked_at" gorm:"index;not null"`
+	ChangesJSON     string           `json:"-" gorm:"type:text"`
+	Changes         []UpstreamChange `json:"changes" gorm:"-"`
+	CreatedAt       time.Time        `json:"created_at" gorm:"autoCreateTime"`
+}
+
+func (UpstreamSnapshot) TableName() string { return "argo_upstream_snapshots" }
+
+func (s *UpstreamSnapshot) BeforeCreate(tx *gorm.DB) error {
+	if s.ID == "" {
+		s.ID = uuid.NewString()
+	}
+	return nil
+}
+
 // MessageLifecycleEvent is an immutable fact in the operational lifecycle of
 // a message. It deliberately duplicates correlation attributes from the
 // attempt so historical evidence remains queryable even when an application
