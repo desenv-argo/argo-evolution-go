@@ -379,6 +379,7 @@ type StatusMediaStruct struct {
 }
 
 type MessageSendStruct struct {
+	InstanceID         string `json:"instanceId,omitempty"`
 	Info               types.MessageInfo
 	Message            *waE2E.Message
 	MessageContextInfo *waE2E.ContextInfo
@@ -2797,8 +2798,9 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 	}
 
 	messageSent := &MessageSendStruct{
-		Info:    messageInfo,
-		Message: msg,
+		InstanceID: instance.Id,
+		Info:       messageInfo,
+		Message:    msg,
 		MessageContextInfo: &waE2E.ContextInfo{
 			StanzaID:      proto.String(data.Quoted.MessageID),
 			Participant:   proto.String(data.Quoted.Participant),
@@ -3176,8 +3178,9 @@ func (s *sendService) SendStatusText(data *StatusTextStruct, instance *instance_
 	}
 
 	messageSent := &MessageSendStruct{
-		Info:    messageInfo,
-		Message: msg,
+		InstanceID: instance.Id,
+		Info:       messageInfo,
+		Message:    msg,
 		MessageContextInfo: &waE2E.ContextInfo{
 			StanzaID:      proto.String(""),
 			Participant:   proto.String(""),
@@ -3332,8 +3335,9 @@ func (s *sendService) sendStatusMedia(client *whatsmeow.Client, data *StatusMedi
 	}
 
 	messageSent := &MessageSendStruct{
-		Info:    messageInfo,
-		Message: media,
+		InstanceID: instance.Id,
+		Info:       messageInfo,
+		Message:    media,
 		MessageContextInfo: &waE2E.ContextInfo{
 			StanzaID:      proto.String(""),
 			Participant:   proto.String(""),

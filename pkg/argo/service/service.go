@@ -80,6 +80,7 @@ type Service interface {
 	RecordReceipt(ctx context.Context, instanceID string, providerMessageIDs []string, state string, occurredAt time.Time) error
 	ReconcilePendingAged(ctx context.Context) (int64, error)
 	ListLifecycleEvents(ctx context.Context, filters argo_model.LifecycleFilters) ([]argo_model.MessageLifecycleEvent, error)
+	ListLifecycleFeed(ctx context.Context, applicationID string, cursor argo_model.LifecycleFeedCursor, limit int) ([]argo_model.MessageLifecycleEvent, error)
 	LifecycleSummary(ctx context.Context, filters argo_model.LifecycleFilters) (*argo_model.LifecycleSummary, error)
 	BackfillLifecycle(ctx context.Context, input LifecycleBackfillInput) (*argo_model.LifecycleBackfillReport, error)
 	StoreMessageMedia(ctx context.Context, instanceID, providerMessageID, fileName, mimeType string, content []byte) error
@@ -337,6 +338,10 @@ func (s *service) ReconcilePendingAged(ctx context.Context) (int64, error) {
 
 func (s *service) ListLifecycleEvents(ctx context.Context, filters argo_model.LifecycleFilters) ([]argo_model.MessageLifecycleEvent, error) {
 	return s.repository.ListLifecycleEvents(ctx, filters)
+}
+
+func (s *service) ListLifecycleFeed(ctx context.Context, applicationID string, cursor argo_model.LifecycleFeedCursor, limit int) ([]argo_model.MessageLifecycleEvent, error) {
+	return s.repository.ListLifecycleFeed(ctx, applicationID, cursor, limit)
 }
 
 func (s *service) LifecycleSummary(ctx context.Context, filters argo_model.LifecycleFilters) (*argo_model.LifecycleSummary, error) {

@@ -284,6 +284,32 @@ func (r *repository) ListLifecycleEvents(ctx context.Context, filters argo_model
 	return events, err
 }
 
+func (r *repository) ListLifecycleFeed(
+	ctx context.Context,
+	applicationID string,
+	cursor argo_model.LifecycleFeedCursor,
+	limit int,
+) ([]argo_model.MessageLifecycleEvent, error) {
+	// The application handler requests one extra row to compute hasMore.
+	if limit <= 0 || limit > 501 {
+		limit = 200
+	}
+	query := r.db.WithContext(ctx).
+		Model(&argo_model.MessageLifecycleEvent{}).
+		Where("application_id = ? AND identity_verified = TRUE", applicationID)
+	if !cursor.CreatedAt.IsZero() {
+		query = query.Where(
+			"(created_at > ?) OR (created_at = ? AND id > ?)",
+			cursor.CreatedAt.UTC(),
+			cursor.CreatedAt.UTC(),
+			cursor.ID,
+		)
+	}
+	events := make([]argo_model.MessageLifecycleEvent, 0)
+	err := query.Order("created_at ASC, id ASC").Limit(limit).Find(&events).Error
+	return events, err
+}
+
 func (r *repository) LifecycleEvents(ctx context.Context, filters argo_model.LifecycleFilters) ([]argo_model.MessageLifecycleEvent, error) {
 	events := make([]argo_model.MessageLifecycleEvent, 0)
 	err := r.scopedLifecycleEvents(ctx, filters).

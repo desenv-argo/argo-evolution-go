@@ -97,6 +97,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 	// Integration heartbeats authenticate with the application's own Argo
 	// credential, so they intentionally do not depend on the Manager admin key.
 	eng.POST("/argo/v1/heartbeat", r.argoHandler.Heartbeat)
+	eng.GET("/argo/v1/messages/lifecycle/feed", r.argoHandler.ApplicationLifecycleFeed)
 
 	routes = eng.Group("/argo/v1")
 	{
