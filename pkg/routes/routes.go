@@ -109,6 +109,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.GET("/operations/attempts", r.argoHandler.ListAttempts)
 			routes.GET("/operations/summary", r.argoHandler.AttemptSummary)
 			routes.GET("/operations/overview", r.argoHandler.GatewayOperationsOverview)
+			routes.GET("/upstream/status", r.argoHandler.UpstreamStatus)
 			routes.GET("/health/heartbeats", r.argoHandler.ListHeartbeats)
 			routes.GET("/health/summary", r.argoHandler.HealthSummary)
 			routes.GET("/messages/lifecycle", r.argoHandler.ListLifecycleEvents)

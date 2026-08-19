@@ -21,6 +21,7 @@ type Handler interface {
 	ListAttempts(ctx *gin.Context)
 	AttemptSummary(ctx *gin.Context)
 	GatewayOperationsOverview(ctx *gin.Context)
+	UpstreamStatus(ctx *gin.Context)
 	Heartbeat(ctx *gin.Context)
 	ListHeartbeats(ctx *gin.Context)
 	HealthSummary(ctx *gin.Context)
@@ -186,6 +187,20 @@ func (h *handler) GatewayOperationsOverview(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"data": overview})
+}
+
+func (h *handler) UpstreamStatus(ctx *gin.Context) {
+	snapshot, err := h.service.UpstreamStatus(ctx.Request.Context())
+	if err != nil {
+		logger.LogError("[ARGO_UPSTREAM] failed to load upstream status: %v", err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load upstream status"})
+		return
+	}
+	if snapshot == nil {
+		ctx.JSON(http.StatusOK, gin.H{"data": gin.H{"status": "unknown", "changes": []interface{}{}}})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"data": snapshot})
 }
 
 func (h *handler) filters(ctx *gin.Context) (argo_model.AttemptFilters, error) {

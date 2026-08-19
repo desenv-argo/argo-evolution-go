@@ -164,13 +164,15 @@ const styles = String.raw`
   .error-breakdown { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 12px; }
   .error-token { border: 1px solid rgba(255,93,115,.15); border-radius: 6px; background: rgba(255,93,115,.055); color: #dca6ae; padding: 5px 7px; font-size: 9px; }
   .pagination { justify-content: space-between; gap: 12px; border-top: 1px solid var(--argo-border); padding: 9px 14px; color: var(--argo-muted); font-size: 9px; }
-  .gateway-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
+  .gateway-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
   .usage-list { display: grid; gap: 7px; }
   .usage-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; border-bottom: 1px solid rgba(255,255,255,.055); padding: 7px 0; }
   .usage-row:last-child { border-bottom: 0; }
   .usage-key { overflow: hidden; font-size: 11px; font-weight: 720; text-overflow: ellipsis; white-space: nowrap; }
   .usage-meta { color: var(--argo-muted); font-size: 9px; }
   .usage-total { color: #dce5df; font-size: 12px; font-weight: 760; text-align: right; }
+  .upstream-change { display: block; overflow: hidden; color: #b9c5be; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; text-decoration: none; }
+  .upstream-change:hover { color: var(--argo-green); }
   .dialog-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.68); padding: 20px; backdrop-filter: blur(3px); }
   .dialog-backdrop[hidden] { display: none; }
   .dialog { width: min(560px, 100%); max-height: min(760px, calc(100vh - 40px)); overflow: auto; border: 1px solid var(--argo-border-strong); border-radius: 11px; background: #101411; box-shadow: 0 24px 80px rgba(0,0,0,.48); }
@@ -706,6 +708,7 @@ class ArgoIntegrations extends ArgoBaseElement {
           <article class="panel"><div class="panel-header"><div><h2 class="panel-title">Uso por aplicação</h2><p class="panel-subtitle">Quem está consumindo o gateway no período</p></div></div><div class="panel-body usage-list" data-application-usage></div></article>
           <article class="panel"><div class="panel-header"><div><h2 class="panel-title">Uso por instância</h2><p class="panel-subtitle">Distribuição e falhas por canal WhatsApp</p></div></div><div class="panel-body usage-list" data-instance-usage></div></article>
           <article class="panel"><div class="panel-header"><div><h2 class="panel-title">Sinais operacionais</h2><p class="panel-subtitle">Entrega, leitura e categorias de falha</p></div></div><div class="panel-body usage-list" data-gateway-signals></div></article>
+          <article class="panel"><div class="panel-header"><div><h2 class="panel-title">Radar do upstream</h2><p class="panel-subtitle">Evolution GO original e defasagem do fork</p></div><span class="status-pill" data-upstream-status>Verificando</span></div><div class="panel-body usage-list" data-upstream></div></article>
         </section>
         <section class="integration-grid">
           <article class="panel">
@@ -807,15 +810,18 @@ class ArgoIntegrations extends ArgoBaseElement {
     this.setError("");
     try {
       const filters = this.operationFilters();
-      const [overview, attempts] = await Promise.all([
+      const [overview, attempts, upstream] = await Promise.all([
         request("/argo/v1/operations/overview", filters, signal),
         request("/argo/v1/operations/attempts", filters, signal),
+        request("/argo/v1/upstream/status", {}, signal),
       ]);
       this.overview = overview || {};
       this.summary = this.overview.attempts || {};
       this.attempts = Array.isArray(attempts) ? attempts : [];
+      this.upstream = upstream || {};
       this.renderSummary();
       this.renderGatewayUsage();
+      this.renderUpstream();
       this.renderErrors();
       this.renderAttempts();
     } catch (error) {
@@ -875,6 +881,30 @@ class ArgoIntegrations extends ArgoBaseElement {
     this.shadowRoot.querySelector("[data-gateway-signals]").replaceChildren(...signals.map(([label, value]) => {
       const row = element("div", "usage-row"); row.append(element("div", "usage-key", label), element("div", "usage-total", value)); return row;
     }));
+  }
+
+  renderUpstream() {
+    const status = this.upstream?.status || "unknown";
+    const labels = { up_to_date: "Atualizado", update_available: "Atualização disponível", diverged: "Divergente", unavailable: "Indisponível", unknown: "Aguardando" };
+    const pill = this.shadowRoot.querySelector("[data-upstream-status]");
+    pill.textContent = labels[status] || status;
+    pill.className = `status-pill ${status === "up_to_date" ? "healthy" : status === "update_available" ? "degraded" : status === "unknown" ? "unknown" : "offline"}`;
+    const target = this.shadowRoot.querySelector("[data-upstream]");
+    target.replaceChildren();
+    const rows = [];
+    const version = this.upstream?.latest_version || this.upstream?.latest_sha?.slice(0, 7) || "Não verificada";
+    rows.push(["Fork baseado em", this.upstream?.baseline_version || this.upstream?.baseline_sha?.slice(0, 7) || "—"]);
+    rows.push(["Upstream atual", version]);
+    rows.push(["Commits pendentes", numberFormatter.format(this.upstream?.behind_by || 0)]);
+    for (const [label, value] of rows) { const row = element("div", "usage-row"); row.append(element("div", "usage-key", label), element("div", "usage-total", value)); target.append(row); }
+    if (this.upstream?.error) target.append(element("div", "media-status unavailable", this.upstream.error));
+    for (const change of (this.upstream?.changes || []).slice(0, 5)) {
+      const link = element("a", "upstream-change", `${change.category || "other"} · ${change.title}`);
+      link.href = safeMediaURL(change.url) || "#"; link.target = "_blank"; link.rel = "noopener noreferrer"; target.append(link);
+    }
+    if (this.upstream?.compare_url) {
+      const compare = element("a", "document-action", "Comparar no GitHub ↗"); compare.href = safeMediaURL(this.upstream.compare_url); compare.target = "_blank"; compare.rel = "noopener noreferrer"; target.append(compare);
+    }
   }
 
   renderApplicationFilter() {

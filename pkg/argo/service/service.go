@@ -85,6 +85,7 @@ type Service interface {
 	StoreMessageMedia(ctx context.Context, instanceID, providerMessageID, fileName, mimeType string, content []byte) error
 	GetMessageMedia(ctx context.Context, instanceID, providerMessageID string) (*argo_model.MessageMedia, error)
 	DeleteMessageMediaBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error)
+	UpstreamStatus(ctx context.Context) (*argo_model.UpstreamSnapshot, error)
 }
 
 type service struct {
@@ -130,6 +131,10 @@ func (s *service) GetMessageMedia(ctx context.Context, instanceID, providerMessa
 
 func (s *service) DeleteMessageMediaBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error) {
 	return s.repository.DeleteMessageMediaBefore(ctx, cutoff.UTC(), limit)
+}
+
+func (s *service) UpstreamStatus(ctx context.Context) (*argo_model.UpstreamSnapshot, error) {
+	return s.repository.LatestUpstreamSnapshot(ctx)
 }
 
 func sanitizeMediaFileName(value, fallback string) string {
