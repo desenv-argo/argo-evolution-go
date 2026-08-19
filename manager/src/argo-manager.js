@@ -380,8 +380,28 @@ function conversationChatJID(conversation) {
   return conversation.chat_jid || conversation.chat_j_id || conversation.chatJid || "";
 }
 
+function isLIDConversation(conversation) {
+  return conversationChatJID(conversation).endsWith("@lid");
+}
+
+function formatPhone(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length === 13 && digits.startsWith("55")) return `+55 (${digits.slice(2, 4)}) ${digits.slice(4, 9)}-${digits.slice(9)}`;
+  if (digits.length === 12 && digits.startsWith("55")) return `+55 (${digits.slice(2, 4)}) ${digits.slice(4, 8)}-${digits.slice(8)}`;
+  return digits ? `+${digits}` : "";
+}
+
 function displayName(conversation) {
-  return conversation.push_name || conversation.contact || conversationChatJID(conversation) || "Conversa";
+  if (conversation.push_name) return conversation.push_name;
+  if (conversation.contact) return formatPhone(conversation.contact);
+  if (isLIDConversation(conversation)) return "Contato não identificado";
+  return conversationChatJID(conversation) || "Conversa";
+}
+
+function displayConversationIdentifier(conversation) {
+  if (conversation.contact) return formatPhone(conversation.contact);
+  if (isLIDConversation(conversation)) return "Telefone ainda não disponibilizado pelo WhatsApp";
+  return conversationChatJID(conversation) || "Identificador indisponível";
 }
 
 function messageBody(message) {
@@ -1578,7 +1598,7 @@ class ArgoConversations extends ArgoBaseElement {
     this.messagePage = null;
     this.renderConversations();
     const header = this.shadowRoot.querySelector("[data-timeline-header]");
-    header.replaceChildren(element("p", "timeline-name", displayName(conversation)), element("p", "timeline-id", `${chatJid} · ${conversation.instance_name}`));
+    header.replaceChildren(element("p", "timeline-name", displayName(conversation)), element("p", "timeline-id", `${displayConversationIdentifier(conversation)} · ${conversation.instance_name}`));
     const target = this.shadowRoot.querySelector("[data-messages]");
     target.replaceChildren(element("div", "empty", "Carregando mensagens..."));
     const signal = this.disconnectController();
