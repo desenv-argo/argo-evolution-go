@@ -474,7 +474,14 @@ func rate(numerator, denominator int64) float64 {
 	if denominator == 0 {
 		return 0
 	}
-	return float64(numerator) * 100 / float64(denominator)
+	value := float64(numerator) * 100 / float64(denominator)
+	// Receipts can enter the selected window after their corresponding sent
+	// event. Rates are operational indicators, not independent event ratios,
+	// and must remain understandable while cohorts overlap period boundaries.
+	if value > 100 {
+		return 100
+	}
+	return value
 }
 
 func appendNonNegativeDuration(values []float64, start, end time.Time) []float64 {

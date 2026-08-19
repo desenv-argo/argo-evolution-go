@@ -185,3 +185,9 @@ func TestSummarizeLifecycleBuildsFunnelAndPercentiles(t *testing.T) {
 		t.Fatalf("unexpected failure breakdown: %#v", summary.Failures)
 	}
 }
+
+func TestRateDoesNotExceedOneHundredAcrossPeriodBoundaries(t *testing.T) {
+	if got := rate(13, 4); got != 100 {
+		t.Fatalf("rate(13, 4) = %v, want 100", got)
+	}
+}
