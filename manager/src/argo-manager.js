@@ -224,12 +224,12 @@ const styles = String.raw`
   .timeline-event.failed::before, .timeline-event.pending_aged::before { background: var(--argo-red); box-shadow: 0 0 0 3px rgba(255,93,115,.08); }
   .timeline-event time { color: var(--argo-muted); font-size: 9px; white-space: nowrap; }
 
-  .conversation-page { padding-bottom: 18px; }
-  .conversation-layout { display: grid; grid-template-columns: minmax(285px, 360px) minmax(0, 1fr); min-height: 650px; max-height: calc(100vh - 230px); }
-  .conversation-sidebar { display: flex; min-width: 0; flex-direction: column; border-right: 1px solid var(--argo-border); }
+  .conversation-page { display: flex; height: calc(100vh - 64px); min-height: 620px; flex-direction: column; padding-bottom: 18px; }
+  .conversation-layout { display: grid; min-height: 0; flex: 1; grid-template-columns: minmax(285px, 360px) minmax(0, 1fr); }
+  .conversation-sidebar { display: flex; min-width: 0; min-height: 0; overflow: hidden; flex-direction: column; border-right: 1px solid var(--argo-border); }
   .conversation-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; padding: 14px; border-bottom: 1px solid var(--argo-border); }
   .conversation-filters .wide { grid-column: 1 / -1; }
-  .conversation-list { overflow: auto; padding: 8px; }
+  .conversation-list { min-height: 0; overflow-y: auto; padding: 8px; scrollbar-color: #42564c #0b0e0c; scrollbar-gutter: stable; scrollbar-width: thin; }
   .conversation-item { width: 100%; border: 1px solid transparent; border-radius: 8px; background: transparent; padding: 10px; cursor: pointer; text-align: left; }
   .conversation-item:hover { background: rgba(0,229,155,.05); }
   .conversation-item.selected { border-color: rgba(0,229,155,.24); background: rgba(0,229,155,.08); }
@@ -240,11 +240,15 @@ const styles = String.raw`
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chip { border: 1px solid rgba(148,163,184,.12); border-radius: 999px; background: rgba(148,163,184,.07); color: var(--argo-muted); padding: 3px 7px; font-size: 9px; font-weight: 700; }
   .chip.alert { border-color: rgba(255,182,72,.24); background: rgba(255,182,72,.1); color: #ffc875; }
-  .timeline { display: flex; min-width: 0; flex-direction: column; background: #0b0e0c; }
+  .timeline { display: flex; min-width: 0; min-height: 0; overflow: hidden; flex-direction: column; background: #0b0e0c; }
   .timeline-header { min-height: 68px; padding: 13px 18px; border-bottom: 1px solid var(--argo-border); }
   .timeline-name { margin: 0; font-size: 14px; font-weight: 760; }
   .timeline-id { margin: 4px 0 0; color: var(--argo-muted); font-size: 11px; }
-  .messages { display: flex; overflow: auto; flex: 1; flex-direction: column; gap: 9px; padding: 20px; }
+  .messages { display: flex; min-height: 0; overflow-y: auto; flex: 1; flex-direction: column; gap: 9px; padding: 20px; scrollbar-color: #42564c #0b0e0c; scrollbar-gutter: stable; scrollbar-width: thin; }
+  .conversation-list::-webkit-scrollbar, .messages::-webkit-scrollbar { width: 9px; }
+  .conversation-list::-webkit-scrollbar-track, .messages::-webkit-scrollbar-track { background: #0b0e0c; }
+  .conversation-list::-webkit-scrollbar-thumb, .messages::-webkit-scrollbar-thumb { border: 2px solid #0b0e0c; border-radius: 999px; background: #42564c; }
+  .conversation-list::-webkit-scrollbar-thumb:hover, .messages::-webkit-scrollbar-thumb:hover { background: #5d7669; }
   .message { align-self: flex-start; width: fit-content; max-width: min(76%, 720px); border: 1px solid var(--argo-border); border-radius: 5px 12px 12px 12px; background: #171b18; padding: 9px 11px; box-shadow: 0 7px 20px rgba(0,0,0,.12); }
   .message.outbound { align-self: flex-end; border-color: rgba(0,229,155,.2); border-radius: 12px 5px 12px 12px; background: #103326; }
   .sender { margin-bottom: 5px; color: #62dfb4; font-size: 10px; font-weight: 750; }
@@ -284,7 +288,8 @@ const styles = String.raw`
 	.funnel-stage:not(:last-child)::after { display: none; }
     .dialog-form { grid-template-columns: 1fr; }
     .dialog-form .wide { grid-column: auto; }
-    .conversation-layout { grid-template-columns: 1fr; max-height: none; }
+    .conversation-page { height: auto; min-height: calc(100vh - 64px); }
+    .conversation-layout { min-height: 0; flex: none; grid-template-columns: 1fr; }
     .conversation-sidebar { max-height: 480px; border-right: 0; border-bottom: 1px solid var(--argo-border); }
     .timeline { min-height: 600px; }
   }
