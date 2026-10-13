@@ -155,7 +155,7 @@ continuam no funil como `legacy/unknown`.
 - documentos e demais mídias recebidas são armazenados em `argo_message_media` e servidos somente pela API administrativa;
 - o Manager oferece prévia autenticada sob demanda para imagens, áudio e vídeo, além de visualização e download de documentos;
 - `ARGO_MESSAGE_MEDIA_MAX_BYTES` limita cada anexo capturado (padrão: 25 MiB; máximo: 100 MiB).
-- a retenção automática remove anexos antigos em lotes; `ARGO_MESSAGE_MEDIA_RETENTION_DAYS` define a janela (padrão: 30 dias), `ARGO_MESSAGE_MEDIA_CLEANUP_SECONDS` o intervalo (padrão: 6 horas) e `ARGO_MESSAGE_MEDIA_CLEANUP_BATCH` o lote (padrão: 500).
+- a retenção automática remove anexos em lotes, a cada `ARGO_MESSAGE_MEDIA_CLEANUP_SECONDS` (padrão: 15 minutos; lote `ARGO_MESSAGE_MEDIA_CLEANUP_BATCH`, padrão 500): primeiro os mais velhos que `ARGO_MESSAGE_MEDIA_RETENTION_DAYS` (padrão: 3 dias) e, em seguida, os mais antigos que passarem do teto de tamanho `ARGO_MESSAGE_MEDIA_MAX_TOTAL_BYTES` (padrão: 2 GiB; mínimo 64 MiB), mesmo dentro da janela. Motivo (2026-10-13): com 30 dias a tabela chegou a 24 GB, encheu o servidor PostgreSQL que ela divide com o Argo ERP e o deixou somente leitura — o ERP parou de gravar.
 
 - dashboard por aplicação e ambiente;
 - consumo por aplicação e instância;

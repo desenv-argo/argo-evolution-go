@@ -198,7 +198,7 @@ func setupRouter(ctx context.Context, db *gorm.DB, authDB *sql.DB, sqliteDB *sql
 		mediaRetentionConfig,
 		argo_worker.MediaRetentionLogger{Info: logger.LogInfo, Error: logger.LogError},
 	)
-	logger.LogInfo("[ARGO_MEDIA] starting retention worker: retention=%s interval=%s batch=%d", mediaRetentionConfig.Retention, mediaRetentionConfig.Interval, mediaRetentionConfig.BatchSize)
+	logger.LogInfo("[ARGO_MEDIA] starting retention worker: retention=%s max_total_bytes=%d interval=%s batch=%d", mediaRetentionConfig.Retention, mediaRetentionConfig.MaxTotalBytes, mediaRetentionConfig.Interval, mediaRetentionConfig.BatchSize)
 	go mediaRetentionWorker.Run(ctx)
 	upstreamConfig := argo_upstream.ConfigFromEnvironment()
 	upstreamMonitorConfig := argo_worker.UpstreamMonitorConfigFromEnvironment()

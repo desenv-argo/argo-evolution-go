@@ -31,6 +31,7 @@ type Repository interface {
 	SaveMessageMedia(ctx context.Context, media *argo_model.MessageMedia) error
 	GetMessageMedia(ctx context.Context, instanceID, providerMessageID string) (*argo_model.MessageMedia, error)
 	DeleteMessageMediaBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error)
+	DeleteMessageMediaOverBudget(ctx context.Context, maxTotalBytes int64, limit int) (int64, error)
 	SaveUpstreamSnapshot(ctx context.Context, snapshot *argo_model.UpstreamSnapshot) error
 	LatestUpstreamSnapshot(ctx context.Context) (*argo_model.UpstreamSnapshot, error)
 }

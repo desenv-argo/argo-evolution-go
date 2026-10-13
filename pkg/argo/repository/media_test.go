@@ -64,3 +64,30 @@ func TestDeleteMessageMediaBeforeUsesBoundedBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestDeleteMessageMediaOverBudgetKeepsTheNewestAndUsesBoundedBatch(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	budget := int64(2 * 1024 * 1024 * 1024)
+	mock.ExpectExec(`(?s)DELETE FROM argo_message_media.*SUM\(size_bytes\) OVER \(ORDER BY created_at DESC, id DESC\).*kept_bytes > \$1.*ORDER BY kept_bytes DESC.*LIMIT \$2`).
+		WithArgs(budget, 500).
+		WillReturnResult(sqlmock.NewResult(0, 12))
+
+	deleted, err := NewRepository(db).DeleteMessageMediaOverBudget(context.Background(), budget, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted != 12 {
+		t.Fatalf("deleted = %d, want 12", deleted)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
