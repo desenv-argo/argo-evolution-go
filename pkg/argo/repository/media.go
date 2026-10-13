@@ -32,6 +32,28 @@ func (r *repository) DeleteMessageMediaBefore(ctx context.Context, cutoff time.T
 	return result.RowsAffected, result.Error
 }
 
+// DeleteMessageMediaOverBudget keeps the newest attachments whose summed size fits
+// maxTotalBytes and removes the rest, oldest first, at most limit rows per call.
+// The age-based retention alone let the table reach 24 GB and fill the database
+// server shared with the Argo ERP (2026-10-13): the budget caps it regardless of age.
+func (r *repository) DeleteMessageMediaOverBudget(ctx context.Context, maxTotalBytes int64, limit int) (int64, error) {
+	if limit <= 0 || limit > 5000 {
+		limit = 500
+	}
+	result := r.db.WithContext(ctx).Exec(`
+		DELETE FROM argo_message_media
+		WHERE id IN (
+			SELECT id FROM (
+				SELECT id, SUM(size_bytes) OVER (ORDER BY created_at DESC, id DESC) AS kept_bytes
+				FROM argo_message_media
+			) ranked
+			WHERE kept_bytes > ?
+			ORDER BY kept_bytes DESC
+			LIMIT ?
+		)`, maxTotalBytes, limit)
+	return result.RowsAffected, result.Error
+}
+
 func (r *repository) GetMessageMedia(ctx context.Context, instanceID, providerMessageID string) (*argo_model.MessageMedia, error) {
 	var media argo_model.MessageMedia
 	err := r.db.WithContext(ctx).
