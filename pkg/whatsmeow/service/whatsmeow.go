@@ -52,6 +52,11 @@ import (
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
 )
 
+// DisconnectReasonClientOutdated is the stable disconnect_reason stored when WhatsApp rejects the connection
+// with 405 (client outdated). Only a dependency bump + redeploy fixes it; the Control Plane health watch
+// classifies the incident by this exact value, so it must not change.
+const DisconnectReasonClientOutdated = "client_outdated"
+
 type WhatsmeowService interface {
 	StartClient(clientData *ClientData)
 	ConnectOnStartup(clientName string)
@@ -2109,6 +2114,22 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	case *events.OfflineSyncCompleted:
 		doWebhook = true
 		postMap["event"] = "OfflineSyncCompleted"
+	case *events.ClientOutdated:
+		// WhatsApp rejected the connection with 405: the whatsmeow version compiled into this binary is no longer
+		// accepted. whatsmeow emits this instead of ConnectFailure, so without this case the instance would show
+		// only "Reconnecting". The stable code is what the Control Plane health watch keys on (incident 2026-11-05).
+		doWebhook = true
+		postMap["event"] = "ClientOutdated"
+		mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] WhatsApp rejected the connection: client outdated (405). The whatsmeow dependency must be updated and the server redeployed.", mycli.userID)
+
+		mycli.userInfoCache.Delete(mycli.Instance.Token)
+
+		mycli.Instance.DisconnectReason = DisconnectReasonClientOutdated
+		mycli.Instance.Connected = false
+		err := mycli.instanceRepository.UpdateConnected(mycli.Instance.Id, mycli.Instance.Connected, mycli.Instance.DisconnectReason)
+		if err != nil {
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Error updating instance: %s", mycli.Instance.Id, err)
+		}
 	case *events.ConnectFailure:
 		doWebhook = true
 		postMap["event"] = "ConnectFailure"
