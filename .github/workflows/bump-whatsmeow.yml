@@ -1,0 +1,146 @@
+name: Bump whatsmeow
+
+# Esteira automática da dependência crítica (incidente 2026-11-05: "Client outdated (405)" por whatsmeow 125 dias atrás).
+#
+# - Toda segunda-feira: se há whatsmeow novo, faz o bump, compila, testa e abre/atualiza o PR `auto/bump-whatsmeow`.
+# - workflow_dispatch: o Control Plane (ou uma pessoa) dispara quando as instâncias caem. Com `all_instances_down=true`
+#   e todos os checks verdes, o PR é mergeado e a publicação (`publish_docker_image.yml`) é disparada — decisão do dono em
+#   2026-11-05: auto-merge só em queda total, quando não há mais nada a perder. Fora disso, merge continua humano.
+#
+# PR aberto com GITHUB_TOKEN não dispara o workflow Validate: por isso os mesmos checks rodam aqui, antes de abrir o PR.
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+    inputs:
+      all_instances_down:
+        description: "Todas as instâncias WhatsApp estão caídas (servidor acessível). Com checks verdes, mergeia e publica."
+        type: boolean
+        default: false
+      reason:
+        description: "Motivo (vai para o PR)."
+        type: string
+        default: ""
+
+concurrency:
+  group: bump-whatsmeow
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+env:
+  MODULE: go.mau.fi/whatsmeow
+  BRANCH: auto/bump-whatsmeow
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Native dependencies (cgo: webp, jpeg)
+        run: sudo apt-get update -q && sudo apt-get install -y -q libwebp-dev libjpeg-dev
+
+      - name: Detect latest whatsmeow
+        id: detect
+        env:
+          GOTOOLCHAIN: auto
+        run: |
+          current=$(go list -m -f '{{.Version}}' "$MODULE")
+          latest=$(go list -m -f '{{.Version}}' "$MODULE@latest")
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          if [ "$current" = "$latest" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "whatsmeow já está na versão mais recente ($current)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "whatsmeow: $current → $latest" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Bump dependency
+        if: steps.detect.outputs.changed == 'true'
+        env:
+          GOTOOLCHAIN: auto
+        run: |
+          go get "$MODULE@${{ steps.detect.outputs.latest }}"
+          go mod tidy
+          # Se o whatsmeow novo exigir Go mais novo, o go.mod sobe sozinho; o Dockerfile e o Validate acompanham.
+          gover=$(go list -m -f '{{.GoVersion}}' | cut -d. -f1,2)
+          sed -i -E "s#^FROM golang:[0-9.]+-alpine AS build#FROM golang:${gover}-alpine AS build#" Dockerfile
+          sed -i -E "s#go-version: \"[0-9.]+\\.x\"#go-version: \"${gover}.x\"#" .github/workflows/validate.yml
+          echo "go_version=$gover" >> "$GITHUB_ENV"
+
+      - name: Embedded WhatsApp version
+        if: steps.detect.outputs.changed == 'true'
+        id: wa
+        run: |
+          dir=$(go list -m -f '{{.Dir}}' "$MODULE")
+          ver=$(grep -oE 'waVersion = WAVersionContainer\{[0-9, ]+\}' "$dir/store/clientpayload.go" | grep -oE '[0-9]+' | paste -sd. -)
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "Versão de cliente embutida: $ver" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build, vet and test
+        if: steps.detect.outputs.changed == 'true'
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          go build ./...
+          go vet ./pkg/... ./cmd/...
+          go test ./...
+
+      - name: Docker build (same path as the publish workflow)
+        if: steps.detect.outputs.changed == 'true'
+        run: docker build --build-arg VERSION=$(cat VERSION) -t argo-evolution-go:bump-check .
+
+      - name: Open or update pull request
+        if: steps.detect.outputs.changed == 'true'
+        id: pr
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: ${{ env.BRANCH }}
+          delete-branch: true
+          commit-message: |
+            chore(deps): bump whatsmeow ${{ steps.detect.outputs.current }} → ${{ steps.detect.outputs.latest }}
+
+            Esteira automática (bump-whatsmeow.yml). Versão de cliente embutida: ${{ steps.wa.outputs.version }}.
+          title: "chore(deps): bump whatsmeow para ${{ steps.detect.outputs.latest }} (cliente ${{ steps.wa.outputs.version }})"
+          labels: dependencies, whatsmeow
+          body: |
+            ## Description
+            Bump automático de `go.mau.fi/whatsmeow`: `${{ steps.detect.outputs.current }}` → `${{ steps.detect.outputs.latest }}`.
+            Versão de cliente WhatsApp embutida: **${{ steps.wa.outputs.version }}**. Go: `${{ env.go_version }}`.
+
+            ${{ inputs.reason != '' && format('Motivo do disparo: {0}', inputs.reason) || 'Disparo agendado (semanal).' }}
+
+            ## Testing
+            - [x] `go build ./...`, `go vet`, `go test ./...` e `docker build` — verdes nesta execução: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            - [ ] Validate não roda em PR aberto pelo bot (limitação do GITHUB_TOKEN); os mesmos checks rodaram acima.
+
+            ## Additional Notes
+            **Merge = deploy em produção.** Instâncias com sessão salva reconectam sem QR.
+            ${{ inputs.all_instances_down == true && '⚠️ Disparado com `all_instances_down=true`: merge e publicação automáticos após os checks.' || '' }}
+
+      - name: Auto-merge and publish (total outage only)
+        if: steps.detect.outputs.changed == 'true' && inputs.all_instances_down == true && steps.pr.outputs.pull-request-number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          number="${{ steps.pr.outputs.pull-request-number }}"
+          gh pr merge "$number" --merge --delete-branch
+          # Merge feito com GITHUB_TOKEN não dispara o publish por evento; o dispatch manual dispara.
+          gh workflow run publish_docker_image.yml --ref main
+          echo "PR #$number mergeado e publicação disparada (queda total)." >> "$GITHUB_STEP_SUMMARY"
