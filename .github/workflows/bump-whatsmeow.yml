@@ -51,7 +51,7 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Native dependencies (cgo: webp, jpeg)
+      - name: Native dependencies for cgo (webp, jpeg)
         run: sudo apt-get update -q && sudo apt-get install -y -q libwebp-dev libjpeg-dev
 
       - name: Detect latest whatsmeow
@@ -104,7 +104,7 @@ jobs:
 
       - name: Docker build (same path as the publish workflow)
         if: steps.detect.outputs.changed == 'true'
-        run: docker build --build-arg VERSION=$(cat VERSION) -t argo-evolution-go:bump-check .
+        run: docker build --build-arg "VERSION=$(cat VERSION)" -t argo-evolution-go:bump-check .
 
       - name: Open or update pull request
         if: steps.detect.outputs.changed == 'true'
